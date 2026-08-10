@@ -71,25 +71,32 @@ export default function App() {
 
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
           <a
-            href="#download"
-            className="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-brand-500 to-cyan-400 hover:from-brand-400 hover:to-cyan-300 text-slate-950 font-extrabold text-base transition-all shadow-xl shadow-brand-500/30 hover:scale-105 flex items-center justify-center gap-3"
+            href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-Setup-1.0.0.exe"
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-brand-500 to-cyan-400 hover:from-brand-400 hover:to-cyan-300 text-slate-950 font-extrabold text-sm transition-all shadow-xl shadow-brand-500/30 hover:scale-105 flex items-center justify-center gap-2.5"
           >
-            <Download className="w-5 h-5" />
-            <span>Download for Windows (v1.0.0)</span>
+            <Monitor className="w-4 h-4" />
+            <span>Windows (.exe)</span>
           </a>
           <a
-            href="#demo"
-            className="w-full sm:w-auto px-8 py-4 rounded-xl glass-card hover:bg-white/10 text-white font-bold text-base border border-white/10 transition-all flex items-center justify-center gap-2"
+            href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-1.0.0-arm64.dmg"
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl glass-card hover:bg-white/15 text-white font-bold text-sm border border-white/15 transition-all hover:scale-105 flex items-center justify-center gap-2.5"
           >
-            <span>Try Interactive Demo</span>
-            <ArrowRight className="w-4 h-4 text-slate-400" />
+            <Apple className="w-4 h-4 text-cyan-300" />
+            <span>macOS (.dmg)</span>
+          </a>
+          <a
+            href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-1.0.0.AppImage"
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl glass-card hover:bg-white/15 text-white font-bold text-sm border border-white/15 transition-all hover:scale-105 flex items-center justify-center gap-2.5"
+          >
+            <Download className="w-4 h-4 text-purple-300" />
+            <span>Linux (.AppImage)</span>
           </a>
         </div>
 
         <div className="mt-8 flex items-center justify-center gap-6 text-xs text-slate-400">
           <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-brand-400" /> Free & Open Source</span>
-          <span className="flex items-center gap-1.5"><Monitor className="w-4 h-4 text-slate-400" /> Windows 10/11 Compatible</span>
-          <span className="flex items-center gap-1.5"><Zap className="w-4 h-4 text-cyan-400" /> Powered by FFmpeg Engine</span>
+          <span className="flex items-center gap-1.5"><Sparkles className="w-4 h-4 text-cyan-400" /> Official Release v1.0.0</span>
+          <span className="flex items-center gap-1.5"><Zap className="w-4 h-4 text-purple-400" /> Powered by FFmpeg Engine</span>
         </div>
       </section>
 
@@ -189,21 +196,36 @@ export default function App() {
       <section id="download" className="py-20 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto text-center">
         <div className="glass-card rounded-3xl p-10 sm:p-16 border border-brand-500/30 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-tr from-brand-500/10 to-cyan-500/10 pointer-events-none" />
-          <h2 className="text-3xl sm:text-5xl font-extrabold text-white mb-6">
+          <h2 className="text-3xl sm:text-5xl font-extrabold text-white mb-4">
             Ready to Accelerate Your Audio Pipeline?
           </h2>
           <p className="text-slate-300 text-lg max-w-xl mx-auto mb-10">
-            Download Audis for Windows today and experience effortless audio editing.
+            Select your platform below to download Audis v1.0.0 directly.
           </p>
-          <a
-            href="https://github.com/ransamie/audis/releases"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-extrabold text-lg transition-all shadow-xl shadow-brand-500/30 hover:scale-105"
-          >
-            <Download className="w-6 h-6" />
-            <span>Download Audis v1.0.0</span>
-          </a>
+          
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-2xl mx-auto">
+            <a
+              href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-Setup-1.0.0.exe"
+              className="w-full sm:w-1/3 px-6 py-4 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-extrabold text-sm transition-all shadow-lg shadow-brand-500/30 hover:scale-105 flex items-center justify-center gap-2"
+            >
+              <Monitor className="w-5 h-5" />
+              <span>Windows (.exe)</span>
+            </a>
+            <a
+              href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-1.0.0-arm64.dmg"
+              className="w-full sm:w-1/3 px-6 py-4 rounded-xl glass-card hover:bg-white/20 text-white font-bold text-sm border border-white/20 transition-all hover:scale-105 flex items-center justify-center gap-2"
+            >
+              <Apple className="w-5 h-5 text-cyan-300" />
+              <span>macOS (.dmg)</span>
+            </a>
+            <a
+              href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-1.0.0.AppImage"
+              className="w-full sm:w-1/3 px-6 py-4 rounded-xl glass-card hover:bg-white/20 text-white font-bold text-sm border border-white/20 transition-all hover:scale-105 flex items-center justify-center gap-2"
+            >
+              <Download className="w-5 h-5 text-purple-300" />
+              <span>Linux (.AppImage)</span>
+            </a>
+          </div>
         </div>
       </section>
 
