@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js'
+import AudisLogo from './Logo'
 import { Play, Pause, Upload, CheckCircle2, Sparkles, Volume2, ShieldCheck, Cpu } from 'lucide-react'
 
 function formatTime(seconds) {
@@ -113,16 +114,14 @@ export default function InteractiveDemo() {
       <div className="absolute top-0 right-0 w-96 h-96 bg-brand-500/10 blur-3xl pointer-events-none rounded-full" />
 
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-6 border-b border-white/10">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-brand-500/20 text-brand-300 border border-brand-500/30">
-              Interactive Web Preview
-            </span>
-            <span className="text-xs text-slate-400">Appetizer Demo</span>
+        <div className="flex items-center gap-3">
+          <AudisLogo variant="light" className="h-6 w-auto" />
+          <div>
+            <h3 className="text-lg font-bold text-white tracking-wide">
+              {fileName}
+            </h3>
+            <p className="text-[11px] text-slate-400">Interactive Web Demo</p>
           </div>
-          <h3 className="text-xl sm:text-2xl font-bold text-white tracking-wide">
-            {fileName}
-          </h3>
         </div>
 
         <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 text-sm font-semibold border border-white/10 transition-all hover:border-brand-500/40">
