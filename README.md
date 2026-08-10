@@ -1,93 +1,105 @@
-# Audis — 1-Click Audio Processing Desktop Utility
+# Audis — 1-Click Audio Processing Desktop Utility & Marketing Showcase
 
-<img src="./public/assets/README.md" />
+![Electron Version](https://img.shields.io/badge/Electron-43.3-47A248?style=for-the-badge&logo=electron&logoColor=white)
+![React Version](https://img.shields.io/badge/React-18.3-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v3.4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![FFmpeg Engine](https://img.shields.io/badge/FFmpeg-6.1-0078D7?style=for-the-badge&logo=ffmpeg&logoColor=white)
+![Vercel Ready](https://img.shields.io/badge/Vercel-Deployed-000000?style=for-the-badge&logo=vercel&logoColor=white)
 
-**Audis** is a premium Electron desktop application that lets you:
-1. **Drag & Drop** a main audio file (MP3/WAV)  
-2. **Visually crop** the start/end with an interactive waveform editor  
-3. **1-Click Export** to stitch Intro + Trimmed Main + Outro with smooth crossfades  
+**Audis** is a premium, open-source desktop application and web showcase designed for podcast creators, sermon editors, and audio producers. It eliminates tedious DAW editing by automating intro/outro stitching, crossfading, and precision waveform cropping.
 
-## Tech Stack
+---
 
-| Layer | Technology |
+## ✨ Features
+
+- 🎵 **Drag & Drop Workflow**: Instant audio file loading with drag-and-drop support.
+- 🌊 **Interactive Waveform Cropper**: Visual region selector powered by `WaveSurfer.js` v7 with zoom and timestamp controls.
+- ⚡ **1-Click Auto-Stitching**: Seamlessly merges **Intro + Trimmed Content + Outro** with customizable 2-second crossfades.
+- 🛠️ **Automatic FFmpeg Error Resilience**: Detects non-standard or corrupt audio bitstreams (e.g., raw AAC/M4A disguised as MP3) and repairs them on the fly into standard PCM WAV/MP3 without crashing.
+- ⚙️ **Persistent Brand Presets**: Remembers your custom intro, outro, crossfade duration, and output directory across sessions via `electron-store`.
+- 🌐 **Marketing Website Showcase**: Includes a standalone Vite/React marketing website in `website/` featuring a live interactive browser demo ready for Vercel deployment.
+
+---
+
+## 🛠️ Tech Stack
+
+| Component | Technology |
 |---|---|
-| Desktop Wrapper | Electron 28 |
-| Frontend | React 18 + Tailwind CSS v3 |
-| Bundler | electron-vite |
-| Audio Visualization | WaveSurfer.js 7 + Regions Plugin |
-| Audio Processing | fluent-ffmpeg + ffmpeg-static |
-| Persistence | electron-store |
+| **Desktop Runtime** | Electron v43.3.0 |
+| **Frontend UI** | React 18 + Tailwind CSS v3 |
+| **Bundler & Tooling** | `electron-vite` |
+| **Audio Visualization** | `WaveSurfer.js` v7 + Regions & Timeline Plugins |
+| **Audio Processing Engine** | `fluent-ffmpeg` + `ffmpeg-static` (v6.1) + `ffprobe-static` |
+| **Settings Storage** | `electron-store` |
+| **Marketing Website** | React + Vite + Lucide Icons (Vercel Ready) |
 
-## Project Structure
+---
+
+## 📁 Project Structure
 
 ```
 audis/
 ├── electron/
-│   ├── main.js        # Main process: BrowserWindow, IPC, FFmpeg pipeline
-│   └── preload.js     # Context bridge: exposes window.electronAPI
+│   ├── main.js             # Main process: BrowserWindow, IPC handlers, FFmpeg pipeline
+│   ├── preload.js          # Secure context bridge: exposes window.electronAPI
+│   └── audio.js            # Core FFmpeg processing & error-resilient repair logic
 ├── src/
-│   ├── App.jsx                  # Root component + state management
-│   ├── main.jsx                 # React entry point
-│   ├── index.css                # Tailwind + custom styles
+│   ├── App.jsx             # Main application state & layout
+│   ├── main.jsx            # React entry point
+│   ├── index.css           # Tailwind CSS directives + custom glassmorphism styles
 │   └── components/
-│       ├── Dropzone.jsx         # Drag-and-drop file input
-│       ├── Waveform.jsx         # WaveSurfer.js waveform + regions
-│       ├── Controls.jsx         # Export panel + progress display
-│       └── Settings.jsx         # Settings modal
-├── public/
-│   └── assets/
-│       ├── intro.mp3            # ← Put your intro track here
-│       └── outro.mp3            # ← Put your outro track here
-├── package.json
-├── electron.vite.config.js
-├── tailwind.config.js
-└── postcss.config.js
+│       ├── Dropzone.jsx    # Drag-and-drop file upload zone
+│       ├── Waveform.jsx    # WaveSurfer.js waveform visualizer & region cropper
+│       ├── Controls.jsx    # Export panel & real-time progress indicator
+│       └── Settings.jsx    # Brand preset settings modal
+├── website/                # Marketing website & interactive live browser demo
+│   ├── src/                # Marketing landing page components
+│   ├── dist/               # Production Vercel build output
+│   └── vercel.json         # Vercel deployment configuration
+├── public/assets/          # Default intro/outro audio assets
+└── package.json
 ```
 
-## Getting Started
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
-- npm 9+
+- **Node.js** 18.x or higher
+- **npm** 9.x or higher
 
 ### Installation
 
 ```bash
-git clone <repo>
+git clone https://github.com/ransamie/audis.git
 cd audis
 npm install
 ```
 
-### Add Your Audio Assets
-
-Place your `intro.mp3` and `outro.mp3` files in `public/assets/`:
-
-```bash
-cp /path/to/your/intro.mp3 public/assets/intro.mp3
-cp /path/to/your/outro.mp3 public/assets/outro.mp3
-```
-
-You can also configure these paths at runtime via the **Settings** panel.
-
 ### Development
+
+Run the Electron desktop app in dev mode with hot reload:
 
 ```bash
 npm run dev
 ```
 
-This launches the Electron app with Vite's hot-reload dev server.
+### Marketing Website Development
 
-### Production Build
+Run the standalone marketing website locally:
 
 ```bash
-npm run build    # Compile all processes
-npm run dist     # Package as native installer (NSIS on Windows, DMG on macOS)
+cd website
+npm install
+npm run dev
 ```
 
-## FFmpeg Pipeline
+---
 
-The `audio:process` IPC handler in `electron/main.js` builds the following `filter_complex`:
+## ⚡ FFmpeg Processing Pipeline
+
+The `audio:process` pipeline in `electron/audio.js` constructs an optimized `filter_complex` command with error tolerance:
 
 ```
 [0:a] afade=t=out:st=(introDuration-FADE):d=FADE           [intro_faded]
@@ -98,30 +110,25 @@ The `audio:process` IPC handler in `electron/main.js` builds the following `filt
 [intro_faded][main_faded][outro_faded] concat=n=3:v=0:a=1  [output]
 ```
 
-**To adjust fade durations:** Open Settings → drag the "Crossfade Duration" slider.  
-The default is **2 seconds**.
+**Error Resilience Flags:**
+`-err_detect ignore_err -fflags +genpts+discardcorrupt -max_error_rate 1.0`
 
-## IPC API Reference
+---
 
-| Channel | Direction | Description |
-|---|---|---|
-| `dialog:openFile` | Renderer → Main | Opens native OS file picker |
-| `audio:process` | Renderer → Main | Starts FFmpeg pipeline |
-| `audio:progress` | Main → Renderer | Live percent + timemark updates |
-| `settings:get` | Renderer → Main | Returns stored settings |
-| `settings:set` | Renderer → Main | Saves settings to disk |
+## 📦 Production Packaging
 
-## Output
+To build and package the native desktop installer:
 
-Exported files are saved as `Final_Output_[ISO-timestamp].mp3` in your Downloads folder (configurable via Settings).
+```bash
+# Compile processes
+npm run build
 
-A native OS notification fires on completion, and the output folder opens automatically.
+# Package installer (NSIS on Windows, DMG on macOS, AppImage on Linux)
+npm run dist
+```
 
-## Customization
+---
 
-| Setting | Default | Description |
-|---|---|---|
-| Intro Path | `public/assets/intro.mp3` | Intro track file |
-| Outro Path | `public/assets/outro.mp3` | Outro track file |
-| Fade Duration | `2s` | All crossfade durations |
-| Output Dir | `~/Downloads` | Where exported files are saved |
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.

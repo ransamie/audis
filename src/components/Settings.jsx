@@ -74,7 +74,6 @@ export default function Settings ({ isOpen, onClose, settings, onSave }) {
   // Fallback hidden file inputs
   const introInputRef = useRef(null)
   const outroInputRef = useRef(null)
-  const dirInputRef = useRef(null)
 
   // Sync form state when settings object changes
   useEffect(() => {
@@ -112,8 +111,12 @@ export default function Settings ({ isOpen, onClose, settings, onSave }) {
 
   // ── Browse for export directory ─────────────────────────────────────────────
   const browseFolder = useCallback(async () => {
+    console.log('[Settings] browseFolder clicked')
+    console.log('[Settings] electronAPI:', window.electronAPI)
+    console.log('[Settings] openDirectoryDialog:', window.electronAPI?.openDirectoryDialog)
+
     if (!window.electronAPI?.openDirectoryDialog) {
-      dirInputRef.current?.click()
+      alert('Native folder dialog is unavailable. Please type the folder path manually.')
       return
     }
     try {
@@ -121,6 +124,7 @@ export default function Settings ({ isOpen, onClose, settings, onSave }) {
         title: 'Select Output Folder',
         defaultPath: form.outputDir || undefined,
       })
+      console.log('[Settings] Directory dialog result:', result)
       if (result) {
         setForm((f) => ({ ...f, outputDir: result }))
       }
@@ -285,23 +289,7 @@ export default function Settings ({ isOpen, onClose, settings, onSave }) {
                 value={form.outputDir}
                 className="flex-1 bg-black/40 border border-white/5 rounded-lg px-3 py-2 text-sm text-slate-300 font-mono focus:outline-none focus:border-brand-500/50"
               />
-              {/* Note: standard file inputs can't easily select directories without webkitdirectory.
-                  This fallback allows directory selection in Chrome. */}
-              <input
-                type="file"
-                ref={dirInputRef}
-                className="hidden"
-                webkitdirectory="true"
-                directory="true"
-                onChange={(e) => {
-                  if (e.target.files?.[0]) {
-                    const path = e.target.files[0].path || ''
-                    // Extract directory from file path if it selects a file
-                    const dir = path.substring(0, path.lastIndexOf('/')) || path.substring(0, path.lastIndexOf('\\')) || path
-                    setForm(f => ({ ...f, outputDir: dir }))
-                  }
-                }}
-              />
+              {/* Directory selection is handled via Electron IPC */}
               <button
                 type="button"
                 onClick={browseFolder}

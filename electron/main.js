@@ -86,6 +86,7 @@ function createWindow () {
       preload:          path.join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,   // MUST be true for contextBridge security
       nodeIntegration:  false,  // MUST be false for security
+      sandbox:          false,  // Disable sandbox — required for ESM preload to work; contextIsolation still protects security
       webSecurity:      true,
     }
   })

@@ -114,17 +114,18 @@
 }
 
 /* Custom sleek scrollbar for the WaveSurfer wrapper when zoomed in */
-#waveform > div::-webkit-scrollbar {
+#waveform ::part(scroll)::-webkit-scrollbar {
   height: 6px;
-}
-#waveform > div::-webkit-scrollbar-track {
   background: transparent;
 }
-#waveform > div::-webkit-scrollbar-thumb {
+#waveform ::part(scroll)::-webkit-scrollbar-track {
+  background: transparent;
+}
+#waveform ::part(scroll)::-webkit-scrollbar-thumb {
   background: rgba(167, 139, 250, 0.3);
   border-radius: 3px;
 }
-#waveform > div::-webkit-scrollbar-thumb:hover {
+#waveform ::part(scroll)::-webkit-scrollbar-thumb:hover {
   background: rgba(167, 139, 250, 0.6);
 }
 

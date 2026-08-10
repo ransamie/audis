@@ -340,31 +340,10 @@ export default function Waveform ({ filePath, blobUrl: initialBlobUrl, onRegionU
       {/* Waveform Header */}
       <div className="flex items-center justify-between px-2">
         <div className="flex items-center gap-3">
-          <svg className="w-8 h-8 text-cyan-400" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="2" y="10" width="2" height="4" rx="1"/>
-            <rect x="6" y="8" width="2" height="8" rx="1"/>
-            <rect x="10" y="4" width="2" height="16" rx="1"/>
-            <rect x="14" y="6" width="2" height="12" rx="1"/>
-            <rect x="18" y="9" width="2" height="6" rx="1"/>
-            <rect x="22" y="11" width="2" height="2" rx="1"/>
-          </svg>
           <div>
             <h1 className="text-xl font-bold text-white tracking-wide">Waveform Crop Editor</h1>
             <p className="text-xs text-slate-400 mt-0.5">{filename}</p>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <button className="w-9 h-9 rounded bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-            </svg>
-          </button>
-          <button className="w-9 h-9 rounded bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-            </svg>
-          </button>
         </div>
       </div>
 
@@ -391,11 +370,47 @@ export default function Waveform ({ filePath, blobUrl: initialBlobUrl, onRegionU
           </div>
         )}
 
-        {/* Loading Spinner Overlay */}
+        {/* Loading Progress Bar Overlay */}
         {isLoading && !errorMsg && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-surface-base/90 z-20 backdrop-blur-xs">
-            <div className="w-9 h-9 rounded-full border-3 border-brand-500 border-t-transparent animate-spin" />
-            <p className="text-xs font-semibold text-brand-300">Decoding Waveform Audio…</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-[#0d0d14]/95 z-20">
+            {/* Animated waveform bars */}
+            <div className="flex items-end gap-1 h-10">
+              {[0.4, 0.7, 1, 0.85, 0.6, 0.9, 0.5, 0.75, 1, 0.65].map((h, i) => (
+                <div
+                  key={i}
+                  className="w-1.5 rounded-full bg-brand-500"
+                  style={{
+                    height: `${h * 100}%`,
+                    animation: `waveBar 1.2s ease-in-out ${i * 0.1}s infinite alternate`,
+                    opacity: 0.6 + h * 0.4,
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="w-64 space-y-2">
+              {/* Indeterminate progress track */}
+              <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-brand-500 via-cyan-400 to-brand-500"
+                  style={{ animation: 'loadingSlide 1.8s ease-in-out infinite', backgroundSize: '200% 100%' }}
+                />
+              </div>
+              <p className="text-xs font-semibold text-slate-400 text-center tracking-wide">
+                Loading audio…
+              </p>
+            </div>
+
+            <style>{`
+              @keyframes waveBar {
+                from { transform: scaleY(0.3); opacity: 0.4; }
+                to   { transform: scaleY(1);   opacity: 1;   }
+              }
+              @keyframes loadingSlide {
+                0%   { transform: translateX(-100%); }
+                100% { transform: translateX(200%); }
+              }
+            `}</style>
           </div>
         )}
 

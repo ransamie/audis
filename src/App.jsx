@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import AudisLogo from './components/Logo'
 import Dropzone from './components/Dropzone'
 import Waveform from './components/Waveform'
 import Controls from './components/Controls'
@@ -115,10 +116,10 @@ export default function App () {
 
   // ── Check if export can proceed ─────────────────────────────────────────────
   const steps = [
-    { label: 'Main Audio', done: Boolean(audioFile?.path) },
-    { label: 'Intro Track', done: Boolean(settings?.introPath) },
-    { label: 'Outro Track', done: Boolean(settings?.outroPath) },
-    { label: 'Crop Region', done: cropRegion.end > cropRegion.start },
+    { label: 'Main Audio',    done: Boolean(audioFile) },
+    { label: 'Intro Track',   done: Boolean(settings?.introPath) },
+    { label: 'Outro Track',   done: Boolean(settings?.outroPath) },
+    { label: 'Crop Region',   done: cropRegion.end > cropRegion.start },
     { label: 'Output Folder', done: Boolean(settings?.outputDir) },
   ]
   const completedSteps = steps.filter(s => s.done).length
@@ -132,21 +133,12 @@ export default function App () {
       <header className="drag-region flex items-center justify-between px-6 py-3 border-b border-white/5 bg-surface-card/40 flex-shrink-0">
         {/* Brand logo & title */}
         <div className="no-drag flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-brand flex items-center justify-center shadow-[0_0_20px_rgba(96,48,255,0.5)]">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-base font-bold shimmer-text">Audis</h1>
-            <p className="text-[11px] text-slate-400">1-Click Audio Processor</p>
-          </div>
+          <AudisLogo className="h-7 w-auto" variant="light" />
         </div>
 
         {/* Top Right Header Controls */}
         <div className="no-drag flex items-center gap-3">
-          {audioFile && (
+          {audioFile && audioFile.path && (
             <span className="badge bg-brand-500/15 text-brand-300 border border-brand-500/30 px-3 py-1 font-mono animate-fade-in">
               <span className="w-2 h-2 rounded-full bg-brand-400 animate-pulse-slow" />
               {audioFile.name}
@@ -242,17 +234,9 @@ export default function App () {
               {/* Waveform visualizer & cropper */}
               <div className="flex-1 glass-card p-5 overflow-hidden flex flex-col border border-white/10">
                 <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Waveform Crop Editor
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Drag the left and right handles to select crop timestamps
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Interactive Region</span>
                   </div>
-                  <span className="text-xs font-mono px-2.5 py-1 rounded bg-brand-500/10 text-brand-300 border border-brand-500/20">
-                    Interactive Region
-                  </span>
                 </div>
 
                 <div className="flex-1 overflow-hidden">
@@ -300,8 +284,8 @@ export default function App () {
           )}
 
           <div className="flex flex-col items-center gap-1">
-            <p className="text-[10px] text-slate-600 text-center">
-              Audis v1.0.0 · Electron + FFmpeg static
+            <p className="text-[10px] text-slate-500 text-center font-medium">
+              Audis v1.0.0 · Developed by <span className="text-slate-300 font-semibold">Ransamie Technologies (RanTech)</span>
             </p>
           </div>
         </aside>

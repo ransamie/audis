@@ -32,22 +32,26 @@ export async function repairAudioFile(filePath) {
       return reject(new Error(`File not found: ${filePath}`))
     }
 
-    const tmpPath = path.join(os.tmpdir(), `audis-repaired-${Date.now()}.m4a`)
+    const tmpWavPath = path.join(os.tmpdir(), `audis-repaired-${Date.now()}.wav`)
 
-    // First attempt: Fast re-mux to M4A
+    // Transcode to standard PCM WAV with error resilience to bypass corrupt frames
     ffmpeg(filePath)
-      .outputOptions(['-c:a', 'copy'])
-      .save(tmpPath)
-      .on('end', () => resolve({ repairedPath: tmpPath, format: 'audio/mp4' }))
+      .inputOptions(['-err_detect', 'ignore_err', '-fflags', '+genpts+discardcorrupt'])
+      .outputOptions(['-max_error_rate', '1.0'])
+      .toFormat('wav')
+      .audioCodec('pcm_s16le')
+      .save(tmpWavPath)
+      .on('end', () => resolve({ repairedPath: tmpWavPath, format: 'audio/wav' }))
       .on('error', (err) => {
-        console.warn('[Audis FFmpeg Remux Failed, attempting full transcode]', err.message)
-        // Second attempt: Full transcode to MP3
-        const transPath = path.join(os.tmpdir(), `audis-repaired-${Date.now()}.mp3`)
+        console.warn('[Audis FFmpeg WAV Repair failed, trying MP3]', err.message)
+        const tmpMp3Path = path.join(os.tmpdir(), `audis-repaired-${Date.now()}.mp3`)
         ffmpeg(filePath)
+          .inputOptions(['-err_detect', 'ignore_err', '-fflags', '+genpts+discardcorrupt'])
+          .outputOptions(['-max_error_rate', '1.0'])
           .audioCodec('libmp3lame')
           .audioBitrate('192k')
-          .save(transPath)
-          .on('end', () => resolve({ repairedPath: transPath, format: 'audio/mpeg' }))
+          .save(tmpMp3Path)
+          .on('end', () => resolve({ repairedPath: tmpMp3Path, format: 'audio/mpeg' }))
           .on('error', (err2) => reject(new Error(`Repair failed: ${err2.message}`)))
       })
   })
@@ -113,11 +117,12 @@ export async function processAudio({
 
   return new Promise((resolve, reject) => {
     const ff = ffmpeg()
+      .inputOptions(['-err_detect', 'ignore_err', '-fflags', '+genpts+discardcorrupt'])
       .input(introPath)
       .input(mainPath)
       .input(outroPath)
       .complexFilter(filterComplex)
-      .outputOptions(['-map [output]'])
+      .outputOptions(['-map [output]', '-max_error_rate', '1.0'])
 
     if (ext === 'mp3') {
       ff.audioCodec('libmp3lame').audioBitrate('320k')
