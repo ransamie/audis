@@ -5,6 +5,7 @@
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v3.4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
 ![FFmpeg Engine](https://img.shields.io/badge/FFmpeg-6.1-0078D7?style=for-the-badge&logo=ffmpeg&logoColor=white)
 ![Vercel Ready](https://img.shields.io/badge/Vercel-Deployed-000000?style=for-the-badge&logo=vercel&logoColor=white)
+![Release](https://img.shields.io/github/v/release/ransamie/audis?include_prereleases&label=Latest&color=brand-500)
 
 **Audis** is a premium, open-source desktop application and web showcase designed for podcast creators, sermon editors, and audio producers. It eliminates tedious DAW editing by automating intro/outro stitching, crossfading, and precision waveform cropping.
 
@@ -17,6 +18,9 @@
 - ⚡ **1-Click Auto-Stitching**: Seamlessly merges **Intro + Trimmed Content + Outro** with customizable 2-second crossfades.
 - 🛠️ **Automatic FFmpeg Error Resilience**: Detects non-standard or corrupt audio bitstreams (e.g., raw AAC/M4A disguised as MP3) and repairs them on the fly into standard PCM WAV/MP3 without crashing.
 - ⚙️ **Persistent Brand Presets**: Remembers your custom intro, outro, crossfade duration, and output directory across sessions via `electron-store`.
+- 🏷️ **Metadata Editor with Cover Art Support**: Tag exported audio with title, artist, album, and artwork before shipping — powered by `music-metadata` v13.
+- 🔍 **Mouse-Wheel Zoom + Precise Cursor**: Zoom the waveform with the mouse wheel and place the playhead cursor precisely for sample-accurate edits.
+- 🎛️ **DAW-Style Batch Workstation**: Audacity/Cakewalk/Audition-inspired Files Bin with per-track analysis, cut review, and export status — process one track or all at once.
 - 🌐 **Marketing Website Showcase**: Includes a standalone Vite/React marketing website in `website/` featuring a live interactive browser demo ready for Vercel deployment.
 
 ---

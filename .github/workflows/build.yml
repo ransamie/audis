@@ -40,3 +40,48 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --publish always
+
+  release:
+    name: Create Formal GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Get Release Notes
+        id: release_notes
+        run: |
+          # Use the annotated tag message as the release body
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          RELEASE_BODY=$(git tag -l --format='%(contents)' "$TAG_NAME")
+          if [ -z "$RELEASE_BODY" ]; then
+            RELEASE_BODY="## Audis ${{ github.ref_name }}
+
+See the [README](https://github.com/ransamie/audis/blob/master/README.md) for full release notes and usage instructions."
+          fi
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create or Update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          RELEASE_NAME="Audis ${{ github.ref_name }}"
+
+          # Check if release already exists (created by electron-builder --publish always)
+          if gh release view "$TAG_NAME" --json id --jq '.id' 2>/dev/null; then
+            # Update existing release with formal description
+            gh release edit "$TAG_NAME" \
+              --title "$RELEASE_NAME" \
+              --notes "${{ steps.release_notes.outputs.body }}"
+          else
+            # Create a new formal release with description
+            gh release create "$TAG_NAME" \
+              --title "$RELEASE_NAME" \
+              --notes "${{ steps.release_notes.outputs.body }}" \
+              --latest
+          fi

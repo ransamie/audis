@@ -1,7 +1,7 @@
 {
   "name": "audis",
-  "version": "1.0.0",
-  "description": "1-click audio processing desktop utility — Intro + Main + Outro stitching with crossfades",
+  "version": "1.1.0",
+  "description": "1-click audio processing desktop utility — Intro + Main + Outro stitching with crossfades, batch AI editing, metadata editor with cover art support, and DAW-style batch workstation",
   "type": "module",
   "main": "out/main/index.js",
   "author": "Ransamie Technologies (RanTech)",

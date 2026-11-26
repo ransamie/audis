@@ -247,31 +247,95 @@ export default function App() {
             Ready to Accelerate Your Audio Pipeline?
           </h2>
           <p className="text-slate-300 text-lg max-w-xl mx-auto mb-10">
-            Select your platform below to download Audis v1.0.0 directly.
+            Select your platform below to download Audis v1.1.0 directly.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-2xl mx-auto">
             <a
-              href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-Setup-1.0.0.exe"
+              href="https://github.com/ransamie/audis/releases/download/v1.1.0/Audis-Setup-1.1.0.exe"
               className="btn-primary w-full sm:w-1/3"
             >
               <Monitor className="w-5 h-5" />
               <span>Windows (.exe)</span>
             </a>
             <a
-              href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-1.0.0-arm64.dmg"
+              href="https://github.com/ransamie/audis/releases/download/v1.1.0/Audis-1.1.0-arm64.dmg"
               className="btn-secondary w-full sm:w-1/3"
             >
               <Apple className="w-5 h-5 text-accent-cyan" />
               <span>macOS (.dmg)</span>
             </a>
             <a
-              href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-1.0.0.AppImage"
+              href="https://github.com/ransamie/audis/releases/download/v1.1.0/Audis-1.1.0.AppImage"
               className="btn-secondary w-full sm:w-1/3"
             >
               <Download className="w-5 h-5 text-accent-emerald" />
               <span>Linux (.AppImage)</span>
             </a>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section id="faq" className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-surface-border">
+        <div className="text-center mb-16">
+          <span className="text-xs font-bold uppercase tracking-wider text-brand-400">Frequently Asked Questions</span>
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-white mt-2">Common Questions</h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* FAQ 1 */}
+          <div className="studio-panel rounded-xl p-6">
+            <h3 className="text-base font-bold text-white mb-3">What audio formats does Audis support?</h3>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Audis supports MP3, WAV, AAC, FLAC, and M4A. Non-standard or corrupt bitstreams (e.g., raw
+              AAC/M4A disguised as MP3) are automatically repaired on the fly into standard PCM WAV/MP3.
+            </p>
+          </div>
+
+          {/* FAQ 2 */}
+          <div className="studio-panel rounded-xl p-6">
+            <h3 className="text-base font-bold text-white mb-3">Can I batch-process multiple files?</h3>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Yes. Drop a folder of recordings into the Files Bin and Audis queues each track for silence
+              analysis, cut review, and background export — process them one by one or all at once.
+            </p>
+          </div>
+
+          {/* FAQ 3 */}
+          <div className="studio-panel rounded-xl p-6">
+            <h3 className="text-base font-bold text-white mb-3">Does Audis remember my intro/outro presets?</h3>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Yes. Your custom intro, outro, crossfade duration, and output directory are saved across
+              sessions via persistent brand presets. Toggle per-track with the I / O keys.
+            </p>
+          </div>
+
+          {/* FAQ 4 */}
+          <div className="studio-panel rounded-xl p-6">
+            <h3 className="text-base font-bold text-white mb-3">Is there a metadata / cover art editor?</h3>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Yes. Audis includes a metadata editor with cover art support so you can tag your exported
+              audio with title, artist, album, and artwork before shipping.
+            </p>
+          </div>
+
+          {/* FAQ 5 */}
+          <div className="studio-panel rounded-xl p-6">
+            <h3 className="text-base font-bold text-white mb-3">What keyboard shortcuts are available?</h3>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Space (play/pause), C (add cut), D (toggle cut), I/O (intro/outro), Enter (approve), Esc
+              (skip), ⌘/Ctrl+Z (undo), and mouse-wheel zoom on the waveform for precise cursor placement.
+            </p>
+          </div>
+
+          {/* FAQ 6 */}
+          <div className="studio-panel rounded-xl p-6">
+            <h3 className="text-base font-bold text-white mb-3">Is Audis free and open source?</h3>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Yes. Audis is distributed under the MIT License and is free to use. The desktop app and
+              marketing website source are both open source on GitHub.
+            </p>
           </div>
         </div>
       </section>
