@@ -414,6 +414,49 @@ export default function Waveform({
     } catch {}
   }, [isReady, duration])
 
+  // Mouse-wheel zoom over the waveform area (scroll up = in, down = out)
+  const handleWheel = useCallback(
+    (e) => {
+      if (!wavesurferRef.current || !isReady) return
+      const container = containerRef.current
+      if (!container || !container.contains(e.target)) return
+
+      // Hijack the wheel so the page doesn't scroll while over the waveform
+      e.preventDefault()
+
+      const ws = wavesurferRef.current
+      const step = 15
+      const isZoomIn = e.deltaY < 0
+      const next = isZoomIn
+        ? Math.min(zoom + step, 500)
+        : Math.max(zoom - step, 0)
+
+      if (next === zoom) return
+
+      // Remember the time under the cursor so the zoom centers on it
+      const rect = container.getBoundingClientRect()
+      const dur  = ws.getDuration() || duration || 0
+      const currentPxPerSec =
+        zoom === 0 ? rect.width / Math.max(dur, 1) : zoom
+      const timeAtCursor = (e.clientX - rect.left) / currentPxPerSec
+
+      setZoom(next)
+
+      // Re-center so the time under the mouse stays under the mouse
+      if (dur > 0 && timeAtCursor >= 0 && next > 0) {
+        const targetPx = timeAtCursor * next
+        const newScroll = targetPx - rect.width / 2
+        try {
+          const scrollEl = container.querySelector('[part="scroll"]')
+          if (scrollEl) {
+            scrollEl.scrollLeft = Math.max(0, newScroll)
+          }
+        } catch {}
+      }
+    },
+    [zoom, isReady, duration, containerRef]
+  )
+
   const auditionCut = useCallback((cut) => {
     const ws = wavesurferRef.current
     if (!ws || !isReady) return
@@ -628,7 +671,8 @@ export default function Waveform({
 
         {/* Waveform Stage */}
         <div
-          className="relative flex-1 flex flex-col overflow-hidden"
+          className="relative flex-1 flex flex-col overflow-hidden cursor-crosshair"
+          onWheel={handleWheel}
           style={{
             '--region-start-time': `'${formatTime(regionStart)}'`,
             '--region-end-time':   `'${formatTime(regionEnd)}'`,
