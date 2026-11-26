@@ -131,18 +131,28 @@ export default function Settings ({ isOpen, onClose, settings, onSave }) {
   }, [])
 
   // Browse for export directory
+  const outputDirRef = useRef(form.outputDir)
+  outputDirRef.current = form.outputDir
+
   const browseFolder = useCallback(async () => {
-    if (!window.electronAPI?.openDirectoryDialog) return
-    try {
-      const result = await window.electronAPI.openDirectoryDialog({
-        title: 'Select Output Folder',
-        defaultPath: form.outputDir || undefined,
-      })
-      if (result) setForm((f) => ({ ...f, outputDir: result }))
-    } catch (err) {
-      console.warn('Folder dialog failed:', err)
+    const api = window.electronAPI
+    if (!api?.openDirectoryDialog) {
+      alert('Folder picker is not available in this build.')
+      return
     }
-  }, [form.outputDir])
+    try {
+      const result = await api.openDirectoryDialog({
+        title: 'Select Output Folder',
+        defaultPath: outputDirRef.current || undefined,
+      })
+      const folderPath = Array.isArray(result) ? result[0] : result
+      if (folderPath) setForm((f) => ({ ...f, outputDir: folderPath }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn('Folder dialog failed:', msg)
+      alert(`Failed to open folder picker: ${msg}`)
+    }
+  }, [])
 
   // Save Settings
   const handleSave = useCallback(async (e) => {
