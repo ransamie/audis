@@ -12,7 +12,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import mm from 'music-metadata'
+import { parseFile, writeFile } from 'music-metadata'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -69,7 +69,7 @@ export async function readMetadata (filePath) {
     throw new Error(`File not found: ${filePath}`)
   }
 
-  const metadata = await mm.parseFile(filePath, { native: true })
+  const metadata = await parseFile(filePath, { native: true })
   const tag = metadata.common
 
   return normaliseTag(tag)
@@ -109,7 +109,7 @@ export async function writeMetadata (filePath, updates = {}) {
       : { no: 0 }
   }
 
-  await mm.writeFile(filePath, native, { native: true })
+  await writeFile(filePath, native, { native: true })
 }
 
 /**
@@ -147,7 +147,7 @@ export async function embedCoverArt (filePath, imageSource) {
     throw new Error(`Cover image too large (${Math.round(imageBuffer.length / 1024)} KB). Max 2 MB.`)
   }
 
-  await mm.writeFile(filePath, {
+  await writeFile(filePath, {
     picture: [{
       data:       imageBuffer,
       format:     mimeType,
@@ -168,7 +168,7 @@ export async function removeCoverArt (filePath) {
   }
 
   // music-metadata writeFile with an empty picture array clears existing pictures
-  await mm.writeFile(filePath, { picture: [] }, { native: true })
+  await writeFile(filePath, { picture: [] }, { native: true })
 }
 
 /**
@@ -180,7 +180,7 @@ export async function extractCoverArt (filePath) {
   if (!filePath || !fs.existsSync(filePath)) return null
 
   try {
-    const metadata = await mm.parseFile(filePath, { native: true })
+    const metadata = await parseFile(filePath, { native: true })
     const pictures = metadata.common?.picture || []
     if (!pictures.length) return null
 
