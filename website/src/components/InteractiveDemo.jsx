@@ -33,13 +33,12 @@ export default function InteractiveDemo() {
 
     const ws = WaveSurfer.create({
       container: containerRef.current,
-      waveColor: '#1e3a4c',
-      progressColor: '#14b8a6',
+      waveColor: '#2ec492',
+      progressColor: '#58dfaf',
       cursorColor: '#f59e0b',
       cursorWidth: 2,
-      barWidth: 2,
-      barGap: 1,
-      barRadius: 2,
+      barWidth: 0, // continuous DAW waveform
+      barGap: 0,
       height: 120,
       normalize: true,
       plugins: [regionsPlugin]
@@ -56,7 +55,7 @@ export default function InteractiveDemo() {
         id: 'demo-region',
         start: dur * 0.1,
         end: endVal,
-        color: 'rgba(20, 184, 166, 0.2)',
+        color: 'rgba(56, 189, 248, 0.14)',
         drag: true,
         resize: true
       })
@@ -78,7 +77,7 @@ export default function InteractiveDemo() {
     for (let i = 0; i < buffer.length; i++) {
       data[i] = Math.sin(i * 0.05) * Math.exp(-i / (ctx.sampleRate * 2)) * 0.5
     }
-    
+
     // Load synthesized demo sound or uploaded file
     if (audioUrl) {
       ws.load(audioUrl)
@@ -109,22 +108,19 @@ export default function InteractiveDemo() {
   }
 
   return (
-    <div className="w-full max-w-5xl mx-auto glass-card rounded-2xl p-6 sm:p-8 border border-white/10 shadow-2xl relative overflow-hidden">
-      {/* Background glow accent */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-brand-500/10 blur-3xl pointer-events-none rounded-full" />
-
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-6 border-b border-white/10">
+    <div className="w-full max-w-5xl mx-auto studio-panel rounded-xl p-6 sm:p-8 border border-surface-border shadow-lg relative overflow-hidden">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-6 border-b border-surface-border">
         <div className="flex items-center gap-3">
           <AudisLogo variant="light" className="h-6 w-auto" />
           <div>
             <h3 className="text-lg font-bold text-white tracking-wide">
               {fileName}
             </h3>
-            <p className="text-[11px] text-slate-400">Interactive Web Demo</p>
+            <p className="text-[11px] text-slate-500">Interactive Web Demo</p>
           </div>
         </div>
 
-        <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 text-sm font-semibold border border-white/10 transition-all hover:border-brand-500/40">
+        <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#111315] hover:bg-surface-hover text-slate-200 text-sm font-semibold border border-[#343944] transition-all hover:border-brand-500/40">
           <Upload className="w-4 h-4 text-brand-400" />
           <span>Upload Audio to Test</span>
           <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
@@ -132,9 +128,9 @@ export default function InteractiveDemo() {
       </div>
 
       {/* Waveform Visualization Canvas */}
-      <div className="relative bg-[#0a0a10] rounded-xl p-4 border border-white/5 mb-6">
+      <div className="relative bg-[#101214] rounded-md p-4 border border-[#2b2f37] mb-6 daw-waveform-bed">
         {isLoading && (
-          <div className="absolute inset-0 bg-[#0d0d14]/80 backdrop-blur-xs flex items-center justify-center z-20">
+          <div className="absolute inset-0 bg-[#141619]/80 backdrop-blur-sm flex items-center justify-center z-20">
             <span className="text-sm font-medium text-brand-300 animate-pulse">Loading Waveform...</span>
           </div>
         )}
@@ -147,12 +143,16 @@ export default function InteractiveDemo() {
         <div className="flex items-center gap-3">
           <button
             onClick={togglePlay}
-            className="w-12 h-12 rounded-full bg-brand-500 hover:bg-brand-400 text-slate-950 flex items-center justify-center transition-all shadow-lg shadow-brand-500/25 hover:scale-105 active:scale-95"
+            className="w-10 h-8 rounded border flex items-center justify-center transition-colors cursor-pointer bg-brand-600 hover:bg-brand-500 border-brand-400/40 text-white"
           >
-            {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+            {isPlaying ? (
+              <Pause className="w-4 h-4 ml-0.5" />
+            ) : (
+              <Play className="w-4 h-4 ml-0.5" />
+            )}
           </button>
           <div>
-            <div className="text-xs text-slate-400 font-mono">CROP RANGE</div>
+            <div className="text-xs text-slate-500 font-mono uppercase tracking-wider block">CROP RANGE</div>
             <div className="text-sm font-semibold font-mono text-brand-300">
               {formatTime(cropRegion.start)} → {formatTime(cropRegion.end)}
             </div>
@@ -160,20 +160,20 @@ export default function InteractiveDemo() {
         </div>
 
         {/* Selected Duration Badge */}
-        <div className="flex items-center justify-center gap-4 bg-white/5 rounded-xl p-3 border border-white/5">
+        <div className="flex items-center justify-center gap-4 bg-[#121417] rounded-md p-3 border border-[#2a2e36]">
           <div className="text-center">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Trimmed Duration</span>
-            <span className="text-base font-bold font-mono text-cyan-300">
+            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider block">Trimmed Duration</span>
+            <span className="text-base font-bold font-mono text-accent-emerald">
               {formatTime(cropRegion.end - cropRegion.start)}
             </span>
           </div>
         </div>
 
         {/* Call-to-action banner for desktop app */}
-        <div className="bg-brand-900/30 border border-brand-500/30 rounded-xl p-3 flex items-center gap-3">
-          <Sparkles className="w-5 h-5 text-brand-400 shrink-0" />
+        <div className="bg-[#1c2e24] border border-[#2a4d3a] rounded-md p-3 flex items-center gap-3">
+          <Sparkles className="w-5 h-5 text-accent-emerald shrink-0" />
           <div className="text-xs text-slate-300">
-            <span className="font-semibold text-white">Main software feature:</span> Auto-stitching intro/outro crossfades in 1-click on desktop!
+            <span className="font-semibold text-white">Desktop feature:</span> Auto-stitch intro/outro crossfades in 1-click!
           </div>
         </div>
       </div>
