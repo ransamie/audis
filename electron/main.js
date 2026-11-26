@@ -5,18 +5,10 @@
  *
  * Responsibilities:
  *   • Create and manage the BrowserWindow
- *   • Register IPC handlers for:
- *       - dialog:openFile      → native file picker
- *       - audio:process        → full FFmpeg pipeline
- *       - settings:get         → retrieve stored intro/outro paths
- *       - settings:set         → persist intro/outro paths
- *   • Execute the FFmpeg filter complex:
- *       1. Trim main audio between [start, end]
- *       2. Apply 2-sec fade-out to intro
- *       3. Apply 2-sec fade-in + 2-sec fade-out to trimmed main audio
- *       4. Apply 2-sec fade-in to outro
- *       5. Concat all three → Final_Output_[timestamp].mp3
- *   • Send OS notification on completion or failure
+ *   • Register IPC handlers for file dialogs, audio processing, settings
+ *   • Analysis Queue Manager (concurrency-limited, in-memory)
+ *   • Export Queue Manager  (concurrency-limited, in-memory)
+ *   • Batch-complete OS notification
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -26,7 +18,8 @@ import {
   ipcMain,
   dialog,
   Notification,
-  shell
+  shell,
+  safeStorage,
 } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -38,13 +31,20 @@ import ffmpegStaticPath from 'ffmpeg-static'
 import ffprobeStaticPath from 'ffprobe-static'
 import { repairAudioFile, processAudio } from './audio.js'
 
+// ─── Lazy-import analyzeFile from analyzer.js (may not exist yet) ───────────
+let analyzeFile = null
+try {
+  const analyzerModule = await import('./analyzer.js')
+  analyzeFile = analyzerModule.analyzeFile
+} catch (err) {
+  console.warn('[Audis] analyzer.js not found or failed to load — analysis queue will be inert:', err.message)
+}
+
 // ─── ESM __dirname shim ────────────────────────────────────────────────────
 const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
 
 // ─── Tell fluent-ffmpeg where the static binary lives ─────────────────────
-// ffmpeg-static resolves the correct binary for the current OS/arch.
-// In production (packaged app) we point to the extraResources copy.
 const resolvedFfmpegPath = app.isPackaged
   ? path.join(process.resourcesPath, 'ffmpeg-static', 'ffmpeg' + (process.platform === 'win32' ? '.exe' : ''))
   : ffmpegStaticPath
@@ -56,47 +56,70 @@ const resolvedFfprobePath = app.isPackaged
 ffmpeg.setFfmpegPath(resolvedFfmpegPath)
 ffmpeg.setFfprobePath(resolvedFfprobePath)
 
+// ─── Audio file extensions for folder scanning ────────────────────────────
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.aac', '.flac', '.m4a'])
+
 // ─── Persistent settings store ─────────────────────────────────────────────
-// Uses electron-store to persist intro/outro paths across sessions.
 const store = new Store({
   name: 'audis-settings',
   defaults: {
     introPath: path.join(app.getAppPath(), 'public', 'assets', 'intro.mp3'),
     outroPath:  path.join(app.getAppPath(), 'public', 'assets', 'outro.mp3'),
-    fadeDuration: 2,   // seconds — adjust this to change all crossfade durations
+    fadeDuration: 2,
     outputDir:   path.join(os.homedir(), 'Downloads'),
     exportFormat: 'original',
+    // ── New bulk-editing settings ────────────────────────────────────────
+    analysisWorkers:    2,
+    exportWorkers:      2,
+    aiMode:             'offline',   // 'offline' | 'cloud'
+    apiProvider:        'groq',      // 'groq' | 'openai'
+    apiKey:             '',          // stored encrypted (base64 of safeStorage ciphertext)
+    noisedB:            -35,
+    minPauseDuration:   0.6,
+    targetPauseSec:     0.35,
+    defaultIntroOutro:  'on',        // 'on' | 'off' | 'ai'
+    loudnormEnabled:    true,
+    batchNamingPattern: '{index}_{title}',
   }
 })
 
-// ─── Window factory ────────────────────────────────────────────────────────
+// ─── Window factory & single-instance lock ─────────────────────────────────
 let mainWindow
 
 function createWindow () {
   mainWindow = new BrowserWindow({
-    width:          1200,
-    height:         800,
-    minWidth:       900,
-    minHeight:      600,
-    backgroundColor: '#0d0d14',
+    width:          1280,
+    height:         820,
+    minWidth:       960,
+    minHeight:      620,
+    show:           false,
+    autoHideMenuBar: true,
+    backgroundColor: '#141619',
     titleBarStyle:  process.platform === 'darwin' ? 'hiddenInset' : 'default',
     frame:          process.platform !== 'darwin',
     webPreferences: {
-      // electron-vite outputs preload as index.mjs when package "type" is "module"
       preload:          path.join(__dirname, '../preload/index.mjs'),
-      contextIsolation: true,   // MUST be true for contextBridge security
-      nodeIntegration:  false,  // MUST be false for security
-      sandbox:          false,  // Disable sandbox — required for ESM preload to work; contextIsolation still protects security
+      contextIsolation: true,
+      nodeIntegration:  false,
+      sandbox:          false,
       webSecurity:      true,
     }
   })
 
-  // Load renderer
+  mainWindow.once('ready-to-show', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error(`[Audis Window Load Failed] ${code} (${desc}) at ${url}`)
+  })
+
   if (process.env['ELECTRON_RENDERER_URL']) {
-    // Dev mode: Vite dev server
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    // Production: built HTML (electron-vite outputs to out/renderer/)
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
 
@@ -104,44 +127,277 @@ function createWindow () {
 }
 
 // ─── App lifecycle ─────────────────────────────────────────────────────────
-app.whenReady().then(() => {
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
   })
-})
+
+  app.whenReady().then(() => {
+    createWindow()
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// ─── IPC: Open file dialog ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// ANALYSIS QUEUE MANAGER
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** @type {Array<{ id: string, filePath: string, priority: number }>} */
+const analysisQueue   = []
+/** @type {Set<string>} IDs of currently running analysis jobs */
+const analysisRunning = new Set()
+
+/** How many analysis jobs run concurrently — read from settings at drain time */
+function getAnalysisConcurrency () {
+  return store.get('analysisWorkers') || 2
+}
+
+/**
+ * Add an item to the analysis queue and kick the drain loop.
+ * @param {string} id
+ * @param {string} filePath
+ * @param {number} [priority=0]  higher = more urgent
+ */
+function enqueueAnalysis (id, filePath, priority = 0) {
+  // Avoid duplicates
+  if (analysisRunning.has(id) || analysisQueue.some(x => x.id === id)) return
+  analysisQueue.push({ id, filePath, priority })
+  drainAnalysisQueue()
+}
+
+/**
+ * Move an item to the front of the analysis queue (called when user focuses it).
+ * @param {string} id
+ */
+function prioritizeAnalysis (id) {
+  const idx = analysisQueue.findIndex(x => x.id === id)
+  if (idx > 0) {
+    const [item] = analysisQueue.splice(idx, 1)
+    analysisQueue.unshift(item)
+  }
+}
+
+/** Start up to ANALYSIS_CONCURRENCY parallel analysis jobs. */
+async function drainAnalysisQueue () {
+  const CONCURRENCY = getAnalysisConcurrency()
+  while (analysisRunning.size < CONCURRENCY && analysisQueue.length > 0) {
+    // Pick the highest-priority item (we keep the queue simple; unshift handles it)
+    const item = analysisQueue.shift()
+    runAnalysis(item.id, item.filePath)   // fire-and-forget; manages its own slot
+  }
+}
+
+/**
+ * Run a single analysis job. Pushes IPC events to the renderer.
+ * @param {string} id
+ * @param {string} filePath
+ */
+async function runAnalysis (id, filePath) {
+  analysisRunning.add(id)
+
+  const send = (channel, data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, data)
+    }
+  }
+
+  send('analysis:start', { id })
+
+  try {
+    if (!analyzeFile) {
+      throw new Error('analyzer.js is not available — cannot analyse file.')
+    }
+    const settings = store.store
+    const result = await analyzeFile(filePath, settings)
+    send('analysis:result', { id, ...result })
+  } catch (err) {
+    console.error(`[Audis Analysis Error] id=${id}`, err.message)
+    send('analysis:error', { id, error: err.message })
+  } finally {
+    analysisRunning.delete(id)
+    drainAnalysisQueue()
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPORT QUEUE MANAGER
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** @type {Array<{ id: string, payload: object }>} */
+const exportQueue   = []
+/** @type {Set<string>} IDs of currently running export jobs */
+const exportRunning = new Set()
+
+/** Batch tracking — set when a batch is initiated so we can fire batch:complete */
+let batchOutputDir  = null
+let batchTotalCount = 0
+
+/** How many export jobs run concurrently — read from settings at drain time */
+function getExportConcurrency () {
+  return store.get('exportWorkers') || 2
+}
+
+/**
+ * Add an item to the export queue and kick the drain loop.
+ * @param {string} id
+ * @param {object} payload
+ */
+function enqueueExport (id, payload) {
+  if (exportRunning.has(id) || exportQueue.some(x => x.id === id)) return
+  exportQueue.push({ id, payload })
+  // Track batch output dir from the first payload that has one
+  if (payload.outputDir && !batchOutputDir) {
+    batchOutputDir  = payload.outputDir
+    batchTotalCount = 0
+  }
+  drainExportQueue()
+}
+
+/** Start up to EXPORT_CONCURRENCY parallel export jobs. */
+async function drainExportQueue () {
+  const CONCURRENCY = getExportConcurrency()
+  while (exportRunning.size < CONCURRENCY && exportQueue.length > 0) {
+    const item = exportQueue.shift()
+    runExport(item.id, item.payload)   // fire-and-forget
+  }
+}
+
+/**
+ * Run a single export job. Pushes IPC progress events to the renderer.
+ * @param {string} id
+ * @param {object} payload
+ */
+async function runExport (id, payload) {
+  exportRunning.add(id)
+  batchTotalCount++
+
+  const send = (channel, data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, data)
+    }
+  }
+
+  const isBatchMode = payload.batchMode !== false
+
+  send('export:start', { id })
+
+  try {
+    const settings  = store.store
+    const introPath = payload.introPath !== undefined ? payload.introPath : settings.introPath
+    const outroPath = payload.outroPath !== undefined ? payload.outroPath : settings.outroPath
+    const outputDir = payload.outputDir || settings.outputDir
+    const exportFormat  = payload.exportFormat  || settings.exportFormat  || 'original'
+    const fadeDuration  = payload.fadeDuration  ?? settings.fadeDuration  ?? 2
+    const loudnormEnabled = payload.loudnormEnabled ?? settings.loudnormEnabled ?? true
+
+    const result = await processAudio({
+      ...payload,
+      introPath,
+      outroPath,
+      outputDir,
+      exportFormat,
+      fadeDuration,
+      loudnormEnabled,
+      onProgress: (progress) => {
+        send('export:progress', {
+          id,
+          percent:   progress.percent,
+          timemark:  progress.timemark,
+        })
+      },
+    })
+
+    send('export:done', { id, outputPath: result.outputPath })
+
+    // Legacy single-file mode: open in Finder/Explorer
+    if (!isBatchMode) {
+      if (Notification.isSupported()) {
+        new Notification({
+          title: '✅ Audis — Export Complete',
+          body:  `Saved to: ${result.outputPath}`,
+          silent: false,
+        }).show()
+      }
+      shell.showItemInFolder(result.outputPath)
+    }
+
+  } catch (err) {
+    console.error(`[Audis Export Error] id=${id}`, err.message)
+    if (Notification.isSupported()) {
+      new Notification({
+        title: '❌ Audis — Export Failed',
+        body:  err.message,
+      }).show()
+    }
+    send('export:error', { id, error: err.message })
+  } finally {
+    exportRunning.delete(id)
+
+    // Check for batch completion
+    if (exportQueue.length === 0 && exportRunning.size === 0 && batchOutputDir) {
+      const outputDir = batchOutputDir
+      const count     = batchTotalCount
+      batchOutputDir  = null
+      batchTotalCount = 0
+
+      send('batch:complete', { totalCount: count, outputDir })
+
+      if (Notification.isSupported()) {
+        new Notification({
+          title: '✅ Audis — Batch Complete',
+          body:  `${count} files exported to ${outputDir}`,
+        }).show()
+      }
+    } else {
+      drainExportQueue()
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IPC HANDLERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Renderer log relay ────────────────────────────────────────────────────
+ipcMain.on('log:renderer', (_event, level, ...args) => {
+  if (level === 'error') console.error('[Renderer]', ...args)
+  else if (level === 'warn')  console.warn('[Renderer]', ...args)
+  else                        console.log('[Renderer]', ...args)
+})
+
+// ─── dialog:openFile (legacy single-file, returns string | null) ───────────
 ipcMain.handle('dialog:openFile', async (_event, options = {}) => {
   try {
     const win = BrowserWindow.fromWebContents(_event.sender) || mainWindow
     const props = options.properties || ['openFile']
     const dialogOptions = {
       title: options.title || 'Select Audio File',
-      properties: props
+      properties: props,
     }
-
     if (!props.includes('openDirectory')) {
-      if (Array.isArray(options.filters) && options.filters.length > 0) {
-        dialogOptions.filters = options.filters
-      } else {
-        dialogOptions.filters = [
-          { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a'] }
-        ]
-      }
+      dialogOptions.filters = Array.isArray(options.filters) && options.filters.length
+        ? options.filters
+        : [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a'] }]
     }
-
     const result = (win && !win.isDestroyed())
       ? await dialog.showOpenDialog(win, dialogOptions)
       : await dialog.showOpenDialog(dialogOptions)
 
-    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-      return null
-    }
+    if (result.canceled || !result.filePaths?.length) return null
     return result.filePaths[0]
   } catch (err) {
     console.error('[Audis openFile Error]', err)
@@ -149,51 +405,75 @@ ipcMain.handle('dialog:openFile', async (_event, options = {}) => {
   }
 })
 
-ipcMain.on('log:renderer', (event, level, ...args) => {
-  if (level === 'error') console.error('[Renderer]', ...args)
-  else if (level === 'warn') console.warn('[Renderer]', ...args)
-  else console.log('[Renderer]', ...args)
-})
-
-// ─── IPC: Read file buffer for WaveSurfer ─────────────────────────────────
-ipcMain.handle('file:readBuffer', async (_event, filePath) => {
+// ─── dialog:openFiles (multi-file, returns string[] | null) ───────────────
+ipcMain.handle('dialog:openFiles', async (_event, options = {}) => {
   try {
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath}`)
+    const win = BrowserWindow.fromWebContents(_event.sender) || mainWindow
+    const dialogOptions = {
+      title: options.title || 'Select Audio Files',
+      properties: ['openFile', 'multiSelections'],
+      filters: Array.isArray(options.filters) && options.filters.length
+        ? options.filters
+        : [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a'] }],
     }
-    const buffer = await fs.promises.readFile(filePath)
-    return buffer
+    const result = (win && !win.isDestroyed())
+      ? await dialog.showOpenDialog(win, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions)
+
+    if (result.canceled || !result.filePaths?.length) return null
+    return result.filePaths
   } catch (err) {
-    console.error('[Audis readBuffer Error]', err)
-    throw err
+    console.error('[Audis openFiles Error]', err)
+    return null
   }
 })
 
-// ─── IPC: Repair/Transcode broken audio files (Failsafe for AAC/M4A/Corrupt containers) ─
-ipcMain.handle('audio:repairFile', async (_event, filePath) => {
-  return await repairAudioFile(filePath)
+// ─── dialog:openFolder (folder picker → scan for audio → string[]) ────────
+ipcMain.handle('dialog:openFolder', async (_event, options = {}) => {
+  try {
+    const win = BrowserWindow.fromWebContents(_event.sender) || mainWindow
+    const dialogOptions = {
+      title: options.title || 'Select Folder',
+      properties: ['openDirectory', 'createDirectory'],
+    }
+    if (options.defaultPath && fs.existsSync(options.defaultPath)) {
+      dialogOptions.defaultPath = options.defaultPath
+    }
+    const result = (win && !win.isDestroyed())
+      ? await dialog.showOpenDialog(win, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions)
+
+    if (result.canceled || !result.filePaths?.length) return null
+
+    const folderPath = result.filePaths[0]
+    const entries    = await fs.promises.readdir(folderPath, { withFileTypes: true })
+    const audioPaths = entries
+      .filter(e => e.isFile() && AUDIO_EXTENSIONS.has(path.extname(e.name).toLowerCase()))
+      .map(e => path.join(folderPath, e.name))
+
+    return audioPaths
+  } catch (err) {
+    console.error('[Audis openFolder Error]', err)
+    return null
+  }
 })
 
-// ─── IPC: Open directory dialog ─────────────────────────────────────────────
+// ─── dialog:openDirectory (legacy directory picker, returns string | null) ─
 ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
   try {
     const win = BrowserWindow.fromWebContents(_event.sender) || mainWindow
     const dialogOptions = {
       title: options.title || 'Select Output Folder',
-      properties: ['openDirectory', 'createDirectory']
+      properties: ['openDirectory', 'createDirectory'],
     }
-
     if (options.defaultPath && typeof options.defaultPath === 'string' && fs.existsSync(options.defaultPath)) {
       dialogOptions.defaultPath = options.defaultPath
     }
-
     const result = (win && !win.isDestroyed())
       ? await dialog.showOpenDialog(win, dialogOptions)
       : await dialog.showOpenDialog(dialogOptions)
 
-    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-      return null
-    }
+    if (result.canceled || !result.filePaths?.length) return null
     return result.filePaths[0]
   } catch (err) {
     console.error('[Audis openDirectory Error]', err)
@@ -201,39 +481,42 @@ ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
   }
 })
 
-// ─── IPC: Get / Set settings ───────────────────────────────────────────────
-ipcMain.handle('settings:get', () => store.store)
-
-ipcMain.handle('settings:set', (_event, updates) => {
-  for (const [key, value] of Object.entries(updates)) {
-    store.set(key, value)
+// ─── file:readBuffer ───────────────────────────────────────────────────────
+ipcMain.handle('file:readBuffer', async (_event, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`)
+    return await fs.promises.readFile(filePath)
+  } catch (err) {
+    console.error('[Audis readBuffer Error]', err)
+    throw err
   }
-  return store.store
 })
 
-// ─── IPC: Core audio processing pipeline ──────────────────────────────────
-/**
- * Handles the 'audio:process' IPC call from the renderer.
- *
- * @param {Object} _event   - Electron IPC event (unused directly)
- * @param {Object} payload  - Processing parameters:
- *   @param {string} payload.mainPath   - Absolute path to the main audio file
- *   @param {number} payload.startTime  - Crop start in seconds (from WaveSurfer region)
- *   @param {number} payload.endTime    - Crop end   in seconds (from WaveSurfer region)
- *   @param {string} [payload.introPath] - Override intro path (optional)
- *   @param {string} [payload.outroPath] - Override outro path (optional)
- */
-ipcMain.handle('audio:process', async (event, payload) => {
-  const {
-    mainPath,
-    startTime,
-    endTime,
-  } = payload
+// ─── file:getDroppedPath ───────────────────────────────────────────────────
+// Kept for backward-compat; preload now uses webUtils.getPathForFile directly.
+ipcMain.handle('file:getDroppedPath', async (_event, fileName) => {
+  // This handler is a no-op shim — in Electron 31+ the renderer resolves the
+  // path itself via webUtils.getPathForFile in the preload.
+  console.warn('[Audis] file:getDroppedPath called — use webUtils.getPathForFile in preload instead.')
+  return fileName
+})
 
-  // Resolve intro/outro from payload or stored settings
-  const introPath = payload.introPath || store.get('introPath')
-  const outroPath = payload.outroPath || store.get('outroPath')
-  const outputDir = store.get('outputDir')
+// ─── audio:repairFile ──────────────────────────────────────────────────────
+ipcMain.handle('audio:repairFile', async (_event, filePath) => {
+  try {
+    return await repairAudioFile(filePath)
+  } catch (err) {
+    console.error('[Audis repairFile Error]', err)
+    throw err
+  }
+})
+
+// ─── audio:process (legacy single-file pipeline) ──────────────────────────
+ipcMain.handle('audio:process', async (event, payload) => {
+  const { mainPath, startTime, endTime } = payload
+  const introPath    = payload.introPath    || store.get('introPath')
+  const outroPath    = payload.outroPath    || store.get('outroPath')
+  const outputDir    = store.get('outputDir')
   const exportFormat = store.get('exportFormat') || 'original'
   const fadeDuration = store.get('fadeDuration')
 
@@ -247,14 +530,15 @@ ipcMain.handle('audio:process', async (event, payload) => {
       outputDir,
       exportFormat,
       fadeDuration,
+      batchMode: false,
       onProgress: (progress) => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('audio:progress', {
-            percent: progress.percent,
+            percent:  progress.percent,
             timemark: progress.timemark,
           })
         }
-      }
+      },
     })
 
     if (Notification.isSupported()) {
@@ -266,7 +550,6 @@ ipcMain.handle('audio:process', async (event, payload) => {
     }
     shell.showItemInFolder(result.outputPath)
     return result
-
   } catch (err) {
     console.error('[Audis FFmpeg Error]', err.message)
     if (Notification.isSupported()) {
@@ -276,5 +559,111 @@ ipcMain.handle('audio:process', async (event, payload) => {
       }).show()
     }
     throw err
+  }
+})
+
+// ─── analysis:enqueue ─────────────────────────────────────────────────────
+ipcMain.handle('analysis:enqueue', async (_event, { id, filePath, priority = 0 }) => {
+  try {
+    enqueueAnalysis(id, filePath, priority)
+    return { queued: true }
+  } catch (err) {
+    console.error('[Audis analysis:enqueue Error]', err)
+    throw err
+  }
+})
+
+// ─── analysis:prioritize ──────────────────────────────────────────────────
+ipcMain.handle('analysis:prioritize', async (_event, { id }) => {
+  try {
+    prioritizeAnalysis(id)
+    return { ok: true }
+  } catch (err) {
+    console.error('[Audis analysis:prioritize Error]', err)
+    throw err
+  }
+})
+
+// ─── export:enqueue ───────────────────────────────────────────────────────
+ipcMain.handle('export:enqueue', async (_event, { id, payload }) => {
+  try {
+    // Reset batch tracker when first item of a new batch arrives
+    if (exportQueue.length === 0 && exportRunning.size === 0) {
+      batchOutputDir  = payload?.outputDir || store.get('outputDir') || null
+      batchTotalCount = 0
+    }
+    enqueueExport(id, payload)
+    return { queued: true }
+  } catch (err) {
+    console.error('[Audis export:enqueue Error]', err)
+    throw err
+  }
+})
+
+// ─── export:cancel ────────────────────────────────────────────────────────
+ipcMain.handle('export:cancel', async (_event, { id }) => {
+  try {
+    const idx = exportQueue.findIndex(x => x.id === id)
+    if (idx !== -1) {
+      exportQueue.splice(idx, 1)
+      return { cancelled: true }
+    }
+    // If already running we cannot cancel FFmpeg mid-flight
+    return { cancelled: false, reason: 'already running or not found' }
+  } catch (err) {
+    console.error('[Audis export:cancel Error]', err)
+    throw err
+  }
+})
+
+// ─── batch:openOutputFolder ───────────────────────────────────────────────
+ipcMain.handle('batch:openOutputFolder', async (_event, { outputDir } = {}) => {
+  try {
+    const dir = outputDir || store.get('outputDir')
+    if (dir && fs.existsSync(dir)) {
+      await shell.openPath(dir)
+    }
+    return { ok: true }
+  } catch (err) {
+    console.error('[Audis batch:openOutputFolder Error]', err)
+    throw err
+  }
+})
+
+// ─── settings:get ─────────────────────────────────────────────────────────
+ipcMain.handle('settings:get', () => {
+  // Return all settings except the raw encrypted apiKey
+  const all = { ...store.store }
+  delete all.apiKey   // never send the encrypted blob to the renderer
+  return all
+})
+
+// ─── settings:set ─────────────────────────────────────────────────────────
+ipcMain.handle('settings:set', (_event, updates) => {
+  for (const [key, value] of Object.entries(updates)) {
+    if (key === 'apiKey') {
+      // Encrypt before storing
+      if (typeof value === 'string' && value.length > 0 && safeStorage.isEncryptionAvailable()) {
+        const encrypted = safeStorage.encryptString(value).toString('base64')
+        store.set('apiKey', encrypted)
+      }
+      continue
+    }
+    store.set(key, value)
+  }
+  const all = { ...store.store }
+  delete all.apiKey
+  return all
+})
+
+// ─── settings:getApiKey ───────────────────────────────────────────────────
+ipcMain.handle('settings:getApiKey', () => {
+  try {
+    const encrypted = store.get('apiKey')
+    if (!encrypted || !safeStorage.isEncryptionAvailable()) return ''
+    return safeStorage.decryptString(Buffer.from(encrypted, 'base64'))
+  } catch (err) {
+    console.error('[Audis getApiKey Error]', err)
+    return ''
   }
 })

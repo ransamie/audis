@@ -21,6 +21,81 @@
 
 ---
 
+## ⚡ Bulk AI Editing — 50 Messages / Hour
+
+### Overview
+
+Audis supports a **review-by-exception** batch workflow designed for sermon editors, podcast producers, and content teams who process large volumes of recordings each week.
+
+**Workflow:** Drop a folder of audio files → AI analyzes each file in the background (silence detection + optional Whisper transcription) → Review only the clips that need attention → Approve the rest with a single keypress → Background export runs concurrently and fires a single notification when done.
+
+---
+
+### Quick Start Workflow
+
+1. **Drop 50 audio files** (or select a folder) onto the Audis dropzone — files join the processing queue immediately.
+2. **AI analyzes in the background** — silence detection runs on every file; optional Whisper cloud transcription adds word-level timestamps, filler-word flags, and a suggested title.
+3. **Review proposed cuts** — the queue surfaces each message with its AI-suggested edits pre-applied. High-confidence items are pre-approved; only exceptions need your eyes.
+4. Press **`Enter`** to approve & auto-advance to the next message, or **`D`** to toggle individual cuts on/off.
+5. **Export runs in the background** — a single desktop notification fires when every file is done.
+
+---
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|---|---|
+| `Space` | Play / Pause (skips over removed sections) |
+| `Tab` | Jump to next flagged cut + auto-audition |
+| `Shift+Tab` | Jump to previous flagged cut + auto-audition |
+| `D` | Toggle active cut on / off |
+| `C` | Add 1s manual cut at playhead |
+| `I` | Toggle Intro for current message |
+| `O` | Toggle Outro for current message |
+| `Enter` | Approve & load next message |
+| `Escape` | Defer / skip current message |
+| `Ctrl/Cmd+A` | Auto-approve all clean (high-confidence) items |
+| `Ctrl/Cmd+Z` | Undo last cut change |
+| `Ctrl/Cmd+←/→` | Previous / Next queued item |
+
+---
+
+### AI Analysis Modes
+
+| Mode | Speed | Internet | Features |
+|---|---|---|---|
+| **DSP Only (Offline)** | ~5–15 s/file | ❌ No | Silence detection, leading/trailing trim |
+| **Cloud API (Groq/OpenAI)** | ~10–25 s/file | ✅ Yes | Whisper word timestamps, retake detection, filler words, auto title |
+
+---
+
+### FFmpeg Filter Graph — 4 Render Modes
+
+| Mode | Filter Graph |
+|---|---|
+| Intro + Main + Outro | `[intro][main][outro]concat=n=3:v=0:a=1` |
+| Intro only | `[intro][main]concat=n=2:v=0:a=1` |
+| Outro only | `[main][outro]concat=n=2:v=0:a=1` |
+| Voice note only | `[main]loudnorm=I=-16:LRA=11:TP=-1.5` |
+
+---
+
+### New Settings
+
+| Setting | Description | Default |
+|---|---|---|
+| `aiMode` | `'offline'` (DSP) or `'cloud'` (Whisper + LLM API) | `'offline'` |
+| `apiProvider` | Cloud transcription/LLM provider — `'groq'` or `'openai'` | `'groq'` |
+| `apiKey` | API key for the selected cloud provider (stored via `safeStorage`) | _(empty)_ |
+| `defaultIntroOutro` | `'on'`, `'off'`, or `'ai'` (let AI decide per file) | `'on'` |
+| `noisedB` | Silence floor threshold in dB | `-35` |
+| `minPauseDuration` | Silences longer than this (seconds) are flagged as cut candidates | `0.6` |
+| `targetPauseSec` | Post-cut pause to leave in place after shortening long pauses | `0.35` |
+| `loudnormEnabled` | Apply `-16 LUFS` normalization on voice-only exports | `true` |
+| `analysisWorkers` / `exportWorkers` | Parallel background worker pool sizes (1–4) | `2` |
+
+---
+
 ## 🛠️ Tech Stack
 
 | Component | Technology |

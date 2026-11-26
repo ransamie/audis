@@ -1,10 +1,12 @@
 /**
  * src/components/Waveform.jsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Audio waveform visualizer with interactive crop region.
+ * Matte Studio Waveform Editor (Adobe Audition / Cakewalk / Audacity inspired).
  *
- * Supports Web Audio decoding + FFmpeg peak extraction fallback for
- * non-standard or container-mismatched files (AAC, M4A, FLAC, etc.).
+ * - Continuous DAW phosphor-emerald waveform (`renderLineWaveform`)
+ * - Embedded synchronized WaveSurfer Timeline ruler
+ * - Red/neutral cut regions with skip-preview & splice auditioning
+ * - Full mechanical transport deck + dB center axis
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -13,8 +15,7 @@ import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js'
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.js'
 
-// Format seconds → M:SS.ms
-function formatTime (seconds) {
+function formatTime(seconds) {
   if (!isFinite(seconds) || isNaN(seconds)) return '0:00.00'
   const m  = Math.floor(seconds / 60)
   const s  = Math.floor(seconds % 60)
@@ -22,39 +23,76 @@ function formatTime (seconds) {
   return `${m}:${String(s).padStart(2, '0')}.${String(ms).padStart(2, '0')}`
 }
 
-// Detect MIME type based on file extension and filename
 function getMimeType(filePath = '') {
   const lower = filePath.toLowerCase()
-  const ext = lower.split('.').pop()
-  if (ext === 'wav') return 'audio/wav'
+  const ext   = lower.split('.').pop()
+  if (ext === 'wav')                           return 'audio/wav'
   if (ext === 'aac' || lower.includes('aac_')) return 'audio/aac'
-  if (ext === 'm4a' || ext === 'mp4') return 'audio/mp4'
-  if (ext === 'flac') return 'audio/flac'
-  if (ext === 'ogg') return 'audio/ogg'
+  if (ext === 'm4a' || ext === 'mp4')          return 'audio/mp4'
+  if (ext === 'flac')                          return 'audio/flac'
+  if (ext === 'ogg')                           return 'audio/ogg'
   return 'audio/mpeg'
 }
 
-const CROP_REGION_ID = 'audis-crop'
+function totalCutTime(cuts) {
+  if (!cuts) return 0
+  return cuts.reduce((acc, c) => {
+    if (c.enabled === false) return acc
+    const len = Math.max(0, (c.end ?? 0) - (c.start ?? 0))
+    const keepPause = c.postPauseSec && len > c.postPauseSec ? c.postPauseSec : 0
+    return acc + Math.max(0, len - keepPause)
+  }, 0)
+}
 
-export default function Waveform ({ filePath, blobUrl: initialBlobUrl, onRegionUpdate, onReady }) {
-  const containerRef  = useRef(null)
-  const wrapperRef    = useRef(null)
-  const timelineRef   = useRef(null)
-  const wavesurferRef = useRef(null)
-  const regionsRef    = useRef(null)
+const CROP_REGION_ID    = 'audis-crop'
+const CUT_REGION_PREFIX = 'cut-'
 
-  const [isPlaying,   setIsPlaying]   = useState(false)
-  const [isLoading,   setIsLoading]   = useState(true)
-  const [isReady,     setIsReady]     = useState(false)
-  const [errorMsg,    setErrorMsg]    = useState(null)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration,    setDuration]    = useState(0)
-  const [zoom,        setZoom]        = useState(0) // 0 means fit-to-screen
-  const [regionStart, setRegionStart] = useState(0)
-  const [regionEnd,   setRegionEnd]   = useState(0)
+// Cut region colors (crisp DAW markers without blur/glare)
+const CUT_COLOR_ENABLED  = 'rgba(220, 38, 38, 0.24)'
+const CUT_COLOR_DISABLED = 'rgba(148, 163, 184, 0.12)'
+const CUT_COLOR_ACTIVE   = 'rgba(239, 68, 68, 0.45)'
+
+export default function Waveform({
+  filePath,
+  blobUrl: initialBlobUrl,
+  peaks,
+  duration: durationProp,
+  cuts,
+  useIntro,
+  useOutro,
+  onRegionUpdate,
+  onReady,
+  onCutsChange,
+  onToggleIntro,
+  onToggleOutro,
+  onApproveAndNext,
+}) {
+  const containerRef      = useRef(null)
+  const wrapperRef        = useRef(null)
+  const wavesurferRef     = useRef(null)
+  const regionsRef        = useRef(null)
+  const cutsRef           = useRef(cuts)
+  const isPlayingRef      = useRef(false)
+  const auditionStopAtRef = useRef(null)
+  const isMultiCutModeRef = useRef(false)
+
+  const [isPlaying,    setIsPlaying]    = useState(false)
+  const [isLoading,    setIsLoading]    = useState(true)
+  const [isReady,      setIsReady]      = useState(false)
+  const [errorMsg,     setErrorMsg]     = useState(null)
+  const [currentTime,  setCurrentTime]  = useState(0)
+  const [duration,     setDuration]     = useState(0)
+  const [zoom,         setZoom]         = useState(0)
+  const [regionStart,  setRegionStart]  = useState(0)
+  const [regionEnd,    setRegionEnd]    = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [activeCutId,  setActiveCutId]  = useState(null)
 
-  // Fullscreen listener
+  const isMultiCutMode = cuts !== null && cuts !== undefined
+  useEffect(() => { cutsRef.current = cuts }, [cuts])
+  useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying])
+  useEffect(() => { isMultiCutModeRef.current = isMultiCutMode }, [isMultiCutMode])
+
   useEffect(() => {
     const handleFs = () => setIsFullscreen(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', handleFs)
@@ -63,21 +101,19 @@ export default function Waveform ({ filePath, blobUrl: initialBlobUrl, onRegionU
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      wrapperRef.current?.requestFullscreen?.().catch(err => {
-        console.warn('Fullscreen error:', err)
-      })
+      wrapperRef.current?.requestFullscreen?.().catch(err => console.warn('Fullscreen error:', err))
     } else {
       document.exitFullscreen?.()
     }
   }, [])
 
+  // ── WaveSurfer init ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current || (!filePath && !initialBlobUrl)) return
 
     let active = true
     let createdObjectUrl = null
 
-    // Destroy existing WaveSurfer instance
     if (wavesurferRef.current) {
       try { wavesurferRef.current.destroy() } catch {}
       wavesurferRef.current = null
@@ -88,33 +124,31 @@ export default function Waveform ({ filePath, blobUrl: initialBlobUrl, onRegionU
     setIsPlaying(false)
     setErrorMsg(null)
     setCurrentTime(0)
+    setZoom(0)
+    setActiveCutId(null)
 
-    // Instantiate WaveSurfer & Regions
     const regionsPlugin = RegionsPlugin.create()
     regionsRef.current  = regionsPlugin
 
+    // Embedded TimelinePlugin auto-scales ticks and syncs scroll/zoom cleanly
     const timelinePlugin = TimelinePlugin.create({
-      container: timelineRef.current,
-      height: 24,
-      timeInterval: 30, // tick every 30 seconds
-      primaryLabelInterval: 1, // label every tick
+      height:         22,
+      insertPosition: 'beforebegin',
       style: {
-        fontSize: '10px',
-        color: '#64748b',
-        fontFamily: 'monospace'
-      }
+        fontSize:   '10px',
+        color:      '#8b94a5',
+        fontFamily: 'JetBrains Mono, monospace',
+      },
     })
 
+    // Omit barWidth/barGap so WaveSurfer renders a continuous DAW filled waveform
     const ws = WaveSurfer.create({
       container:     containerRef.current,
-      waveColor:     '#1e4055',        // Dark teal for unselected waveform
-      progressColor: '#1e4055',        
-      cursorColor:   '#f59e0b',        // Bright amber for high contrast
+      waveColor:     '#2ec492',
+      progressColor: '#58dfaf',
+      cursorColor:   '#f59e0b',
       cursorWidth:   2,
-      barWidth:      2,
-      barGap:        1,
-      barRadius:     2,
-      height:        'auto',           
+      height:        'auto',
       normalize:     true,
       interact:      true,
       plugins:       [regionsPlugin, timelinePlugin],
@@ -122,26 +156,27 @@ export default function Waveform ({ filePath, blobUrl: initialBlobUrl, onRegionU
 
     wavesurferRef.current = ws
 
-    // Helper to setup region once duration is known
-    const setupRegion = (dur) => {
+    const setupCropRegion = (dur) => {
       if (!active) return
       setIsLoading(false)
       setIsReady(true)
       setDuration(dur)
 
-      try {
-        regionsPlugin.clearRegions()
-        const region = regionsPlugin.addRegion({
-          id:        CROP_REGION_ID,
-          start:     0,
-          end:       dur,
-          color:     'rgba(0, 216, 255, 0.15)', // Cyan overlay
-          drag:      true,
-          resize:    true,
-          minLength: 0.5,
-        })
-      } catch (e) {
-        console.warn('Region creation warning:', e)
+      if (!isMultiCutModeRef.current) {
+        try {
+          regionsPlugin.clearRegions()
+          regionsPlugin.addRegion({
+            id:        CROP_REGION_ID,
+            start:     0,
+            end:       dur,
+            color:     'rgba(56, 189, 248, 0.14)',
+            drag:      true,
+            resize:    true,
+            minLength: 0.5,
+          })
+        } catch (e) {
+          console.warn('Region creation warning:', e)
+        }
       }
 
       setRegionStart(0)
@@ -150,13 +185,10 @@ export default function Waveform ({ filePath, blobUrl: initialBlobUrl, onRegionU
       onReady?.(dur)
     }
 
-
-    // Load Audio Source
     const loadAudioSource = async () => {
       try {
         let urlToLoad = initialBlobUrl
 
-        // If no initial Blob URL provided, read file via IPC and convert to Blob URL with correct MIME type
         if (!urlToLoad && filePath) {
           if (window.electronAPI?.readFileBuffer) {
             const rawBuffer = await window.electronAPI.readFileBuffer(filePath)
@@ -172,36 +204,30 @@ export default function Waveform ({ filePath, blobUrl: initialBlobUrl, onRegionU
 
         if (!active) return
 
-        // Pass URL to WaveSurfer
-        await ws.load(urlToLoad)
+        if (peaks?.length && durationProp) {
+          await ws.load(urlToLoad, [new Float32Array(peaks)], durationProp)
+        } else {
+          await ws.load(urlToLoad)
+        }
       } catch (err) {
         if (!active) return
-        window.electronAPI?.logToMain?.('warn', '[WaveSurfer WebAudio Load failed, attempting FFmpeg Peak fallback...]', err?.message)
-        console.warn('[WaveSurfer WebAudio Load failed, attempting FFmpeg Peak fallback...]', err, err.message)
+        window.electronAPI?.logToMain?.('warn', '[WaveSurfer WebAudio Load failed, attempting FFmpeg repair...]', err?.message)
 
-        // FFmpeg Repair Fallback for AAC/M4A/Corrupt containers
         if (filePath && window.electronAPI?.repairAudioFile) {
           try {
-            window.electronAPI?.logToMain?.('log', '[Waveform] Attempting to repair file via FFmpeg:', filePath)
             const { repairedPath, format } = await window.electronAPI.repairAudioFile(filePath)
             if (!active) return
-
             if (repairedPath) {
-              window.electronAPI?.logToMain?.('log', '[Waveform] Repair successful, reading repaired buffer', repairedPath)
               const rawBuffer = await window.electronAPI.readFileBuffer(repairedPath)
               if (!active) return
-              
-              const blob = new Blob([rawBuffer], { type: format })
+              const blob   = new Blob([rawBuffer], { type: format })
               const newUrl = URL.createObjectURL(blob)
               if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl)
               createdObjectUrl = newUrl
-              
               await ws.load(newUrl)
-              window.electronAPI?.logToMain?.('log', '[Waveform] Repaired file loaded successfully')
-              return // Return here. ws.on('ready') will handle the rest.
+              return
             }
           } catch (ffErr) {
-            window.electronAPI?.logToMain?.('error', '[FFmpeg Repair Error]', ffErr?.message)
             if (active) {
               setIsLoading(false)
               setErrorMsg(`Repair Failed: ${ffErr?.message}`)
@@ -218,320 +244,596 @@ export default function Waveform ({ filePath, blobUrl: initialBlobUrl, onRegionU
 
     loadAudioSource()
 
-    // Event listeners
     ws.on('loading', () => setIsLoading(true))
-
     ws.on('ready', (dur) => {
       if (!active) return
-      setupRegion(dur)
+      setupCropRegion(dur)
     })
-
     ws.on('error', (err) => {
       if (!active) return
-      window.electronAPI?.logToMain?.('warn', '[WaveSurfer Error Event]', err?.message || err)
-      console.warn('[WaveSurfer Error Event]', err)
-      // Note: We don't set errorMsg here because the `loadAudioSource` catch block handles initial load failures.
+      console.warn('[WaveSurfer Error]', err)
     })
 
-    ws.on('audioprocess', (t) => setCurrentTime(t))
+    ws.on('audioprocess', (t) => {
+      setCurrentTime(t)
+
+      if (auditionStopAtRef.current !== null && t >= auditionStopAtRef.current) {
+        auditionStopAtRef.current = null
+        try { ws.pause() } catch {}
+        return
+      }
+
+      const currentCuts = cutsRef.current
+      if (currentCuts && isPlayingRef.current) {
+        const activeCut = currentCuts.find(
+          c => c.enabled !== false && t >= c.start && t < c.end
+        )
+        if (activeCut) {
+          try { ws.setTime(Math.min(ws.getDuration() || activeCut.end, activeCut.end + 0.03)) } catch {}
+        }
+      }
+    })
+
     ws.on('seek', (pct) => {
       try { setCurrentTime(pct * (ws.getDuration() || 0)) } catch {}
     })
-    ws.on('play', () => setIsPlaying(true))
-    ws.on('pause', () => setIsPlaying(false))
-    ws.on('finish', () => setIsPlaying(false))
+    ws.on('play',   () => setIsPlaying(true))
+    ws.on('pause',  () => { auditionStopAtRef.current = null; setIsPlaying(false) })
+    ws.on('finish', () => { auditionStopAtRef.current = null; setIsPlaying(false) })
 
-    // Handle region movements
     regionsPlugin.on('region-updated', (region) => {
-      if (!active || region.id !== CROP_REGION_ID) return
-      try {
-        const start = Math.max(0, region.start)
-        const dur = ws.getDuration()
-        const end   = Math.min(dur || Infinity, region.end)
-        setRegionStart(start)
-        setRegionEnd(end)
-        onRegionUpdate?.(start, end, dur)
-      } catch {}
+      if (!active) return
+      if (region.id === CROP_REGION_ID) {
+        try {
+          const start = Math.max(0, region.start)
+          const dur   = ws.getDuration()
+          const end   = Math.min(dur || Infinity, region.end)
+          setRegionStart(start)
+          setRegionEnd(end)
+          onRegionUpdate?.(start, end, dur)
+        } catch {}
+        return
+      }
+
+      if (region.id.startsWith(CUT_REGION_PREFIX)) {
+        const cutId = region.id.slice(CUT_REGION_PREFIX.length)
+        const currentCuts = cutsRef.current
+        if (!currentCuts) return
+        const updated = currentCuts.map(c =>
+          c.id === cutId ? { ...c, start: region.start, end: region.end } : c
+        )
+        onCutsChange?.(updated)
+      }
+    })
+
+    regionsPlugin.on('region-clicked', (region, e) => {
+      if (!active || !region.id.startsWith(CUT_REGION_PREFIX)) return
+      e.stopPropagation()
+
+      const cutId = region.id.slice(CUT_REGION_PREFIX.length)
+      const currentCuts = cutsRef.current
+      if (!currentCuts) return
+
+      const updated = currentCuts.map(c =>
+        c.id === cutId ? { ...c, enabled: !c.enabled } : c
+      )
+      setActiveCutId(cutId)
+      onCutsChange?.(updated)
     })
 
     return () => {
       active = false
+      auditionStopAtRef.current = null
       try { ws.destroy() } catch {}
       wavesurferRef.current = null
-      if (createdObjectUrl) {
-        URL.revokeObjectURL(createdObjectUrl)
-      }
+      if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath, initialBlobUrl])
+
+  // Sync cut regions
+  useEffect(() => {
+    const rp = regionsRef.current
+    const ws = wavesurferRef.current
+    if (!rp || !ws || !isReady || !isMultiCutMode) return
+
+    rp.getRegions().forEach(r => {
+      if (r.id === CROP_REGION_ID || r.id.startsWith(CUT_REGION_PREFIX)) r.remove()
+    })
+
+    if (!cuts) return
+
+    cuts.forEach(cut => {
+      const isActive = cut.id === activeCutId
+      rp.addRegion({
+        id:        `${CUT_REGION_PREFIX}${cut.id}`,
+        start:     cut.start,
+        end:       cut.end,
+        color:     isActive
+          ? CUT_COLOR_ACTIVE
+          : cut.enabled !== false ? CUT_COLOR_ENABLED : CUT_COLOR_DISABLED,
+        drag:      true,
+        resize:    true,
+        minLength: 0.1,
+      })
+    })
+  }, [cuts, isReady, isMultiCutMode, activeCutId])
 
   // Zoom slider
   useEffect(() => {
-    if (wavesurferRef.current && isReady) {
-      try {
-        if (zoom === 0) {
-          // Fit to screen (default minPxPerSec is container width / duration)
-          const width = containerRef.current.clientWidth
-          const dur = wavesurferRef.current.getDuration()
-          wavesurferRef.current.zoom(dur > 0 ? width / dur : 0)
-        } else {
-          // Zoom in
-          wavesurferRef.current.zoom(zoom)
-        }
-      } catch (e) {
-        console.warn('[WaveSurfer Zoom Error]', e)
+    if (!wavesurferRef.current || !isReady) return
+    try {
+      if (zoom === 0) {
+        const width = containerRef.current.clientWidth
+        const dur   = wavesurferRef.current.getDuration()
+        wavesurferRef.current.zoom(dur > 0 ? width / dur : 0)
+      } else {
+        wavesurferRef.current.zoom(zoom)
       }
+    } catch (e) {
+      console.warn('[WaveSurfer Zoom Error]', e)
     }
   }, [zoom, isReady])
 
-  // Transport controls
+  // Transport helpers
   const togglePlay = useCallback(() => {
     if (!wavesurferRef.current || !isReady) return
     try {
-      const current = wavesurferRef.current.getCurrentTime()
       const ws = wavesurferRef.current
-
-      if (!isPlaying) {
-        if (current < regionStart || current >= regionEnd) {
-          ws.setTime(regionStart)
-        }
+      const current = ws.getCurrentTime()
+      if (!isPlayingRef.current && (current < regionStart || current >= regionEnd)) {
+        ws.setTime(regionStart)
       }
       ws.playPause()
     } catch (e) {
       console.warn('[WaveSurfer Play Error]', e)
     }
-  }, [isReady, isPlaying, regionStart, regionEnd])
-
-  // Spacebar Play/Pause
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Ignore if user is typing in an input
-      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
-      
-      if (e.code === 'Space') {
-        e.preventDefault() // prevent page scroll
-        togglePlay()
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [togglePlay])
+  }, [isReady, regionStart, regionEnd])
 
   const seekToStart = useCallback(() => {
     if (!wavesurferRef.current || !isReady) return
-    try { wavesurferRef.current.setTime(regionStart) } catch {}
+    try { wavesurferRef.current.setTime(regionStart); setCurrentTime(regionStart) } catch {}
   }, [isReady, regionStart])
 
   const seekToEnd = useCallback(() => {
     if (!wavesurferRef.current || !isReady) return
-    try { wavesurferRef.current.setTime(Math.max(0, regionEnd - 0.5)) } catch {}
+    try {
+      const t = Math.max(0, regionEnd - 0.5)
+      wavesurferRef.current.setTime(t)
+      setCurrentTime(t)
+    } catch {}
   }, [isReady, regionEnd])
 
-  const hasCropped = regionStart > 0 || regionEnd < (duration - 0.5)
-  const filename = filePath ? filePath.split(/[\\/]/).pop() : 'Untitled Project.wav'
+  const nudgeTime = useCallback((delta) => {
+    if (!wavesurferRef.current || !isReady) return
+    try {
+      const dur = wavesurferRef.current.getDuration() || duration || 0
+      const next = Math.max(0, Math.min(dur, wavesurferRef.current.getCurrentTime() + delta))
+      wavesurferRef.current.setTime(next)
+      setCurrentTime(next)
+    } catch {}
+  }, [isReady, duration])
+
+  const auditionCut = useCallback((cut) => {
+    const ws = wavesurferRef.current
+    if (!ws || !isReady) return
+
+    setActiveCutId(cut.id)
+    const dur      = ws.getDuration() || duration || 0
+    const preroll  = 1.5
+    const postroll = 1.5
+    const startAt  = Math.max(0, cut.start - preroll)
+    const stopAt   = Math.min(dur || (cut.end + postroll), cut.end + postroll)
+
+    auditionStopAtRef.current = stopAt
+    ws.setTime(startAt)
+    ws.play()
+  }, [isReady, duration])
+
+  const addCutAtPlayhead = useCallback(() => {
+    const ws = wavesurferRef.current
+    if (!ws || !isReady || !isMultiCutMode) return
+    const dur = ws.getDuration() || duration || 0
+    if (dur <= 0.2) return
+    const t = ws.getCurrentTime()
+    const start = Math.max(0, Number((t - 0.5).toFixed(2)))
+    const end   = Math.min(dur, Number((t + 0.5).toFixed(2)))
+    if (end - start < 0.1) return
+    const newCut = {
+      id: `manual_${Date.now()}`,
+      start,
+      end,
+      reason: 'manual_cut',
+      confidence: 1.0,
+      enabled: true,
+    }
+    const nextCuts = [...(cutsRef.current || []), newCut].sort((a, b) => a.start - b.start)
+    setActiveCutId(newCut.id)
+    onCutsChange?.(nextCuts)
+  }, [isReady, isMultiCutMode, duration, onCutsChange])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.isComposing || document.querySelector('dialog[open]')) return
+      const tag = e.target?.tagName
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if ((e.code === 'Space' || e.code === 'Enter') && ['BUTTON', 'A'].includes(tag)) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault()
+          togglePlay()
+          break
+        case 'Tab': {
+          e.preventDefault()
+          const ws = wavesurferRef.current
+          if (!ws || !isReady) break
+          const allCuts = cutsRef.current || []
+          if (!allCuts.length) break
+          const currentIdx = allCuts.findIndex(c => c.id === activeCutId)
+          const nextIdx = activeCutId !== null && currentIdx >= 0
+            ? (currentIdx + (e.shiftKey ? -1 : 1) + allCuts.length) % allCuts.length
+            : 0
+          auditionCut(allCuts[nextIdx])
+          break
+        }
+        case 'KeyD':
+          e.preventDefault()
+          if (activeCutId && cutsRef.current) {
+            onCutsChange?.(cutsRef.current.map(c =>
+              c.id === activeCutId ? { ...c, enabled: !c.enabled } : c
+            ))
+          }
+          break
+        case 'KeyC':
+          e.preventDefault()
+          addCutAtPlayhead()
+          break
+        case 'KeyI':
+          e.preventDefault()
+          onToggleIntro?.()
+          break
+        case 'KeyO':
+          e.preventDefault()
+          onToggleOutro?.()
+          break
+        case 'Enter':
+          e.preventDefault()
+          onApproveAndNext?.()
+          break
+        default:
+          break
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [togglePlay, isReady, activeCutId, auditionCut, addCutAtPlayhead, onCutsChange, onToggleIntro, onToggleOutro, onApproveAndNext])
+
+  const filename    = filePath ? filePath.split(/[/\\]/).pop() : 'Untitled Project.wav'
+  const enabledCuts = (cuts || []).filter(c => c.enabled !== false)
+  const timeSaved   = totalCutTime(cuts)
+  const netDuration = Math.max(0, duration - timeSaved)
 
   return (
-    <div 
+    <div
       ref={wrapperRef}
-      className={`waveform-editor-wrapper flex flex-col h-full animate-fade-in space-y-4 ${
-        isFullscreen ? 'bg-[#0d0d14] p-6 z-50' : ''
-      }`}
+      className={`flex flex-col h-full bg-[#141619] ${isFullscreen ? 'p-4 z-50' : ''}`}
     >
-      {/* Waveform Header */}
-      <div className="flex items-center justify-between px-2">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-wide">Waveform Crop Editor</h1>
-            <p className="text-xs text-slate-400 mt-0.5">{filename}</p>
-          </div>
+      {/* Editor Top Toolbar */}
+      <div className="flex items-center justify-between gap-3 px-4 py-2 bg-[#1a1d22] border-b border-[#2b2f37] flex-shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <h1 className="text-xs font-bold uppercase tracking-widest text-slate-300 flex-shrink-0">
+            Waveform Editor
+          </h1>
+          <span className="text-[#363c48]" aria-hidden="true">|</span>
+          <span className="text-xs font-mono text-slate-200 truncate" title={filename}>
+            {filename}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isMultiCutMode && isReady && (
+            <>
+              <button
+                type="button"
+                onClick={addCutAtPlayhead}
+                className="btn-secondary text-[11px] py-1 px-2.5"
+                title="Mark 1s cut around playhead (C)"
+              >
+                + Cut Here
+              </button>
+              {activeCutId && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const active = (cuts || []).find(c => c.id === activeCutId)
+                      if (active) auditionCut(active)
+                    }}
+                    className="btn-secondary text-[11px] py-1 px-2.5"
+                    title="Audition splice transition (Tab)"
+                  >
+                    Audition Splice
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!cutsRef.current) return
+                      onCutsChange?.(cutsRef.current.map(c =>
+                        c.id === activeCutId ? { ...c, enabled: !c.enabled } : c
+                      ))
+                    }}
+                    className="btn-secondary text-[11px] py-1 px-2.5"
+                    title="Toggle cut active/bypassed (D)"
+                  >
+                    Toggle Cut
+                  </button>
+                </>
+              )}
+              <span className="text-[#363c48] mx-0.5" aria-hidden="true">|</span>
+            </>
+          )}
+
+          {isMultiCutMode && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={onToggleIntro}
+                aria-pressed={useIntro}
+                title="Toggle Intro (I)"
+                className={[
+                  'px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer',
+                  useIntro
+                    ? 'bg-brand-600/25 border-brand-500/60 text-brand-200'
+                    : 'bg-[#141619] border-[#2e323a] text-slate-500 hover:text-slate-300',
+                ].join(' ')}
+              >
+                Intro: {useIntro ? 'ON' : 'OFF'}
+              </button>
+              <button
+                type="button"
+                onClick={onToggleOutro}
+                aria-pressed={useOutro}
+                title="Toggle Outro (O)"
+                className={[
+                  'px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer',
+                  useOutro
+                    ? 'bg-brand-600/25 border-brand-500/60 text-brand-200'
+                    : 'bg-[#141619] border-[#2e323a] text-slate-500 hover:text-slate-300',
+                ].join(' ')}
+              >
+                Outro: {useOutro ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Timeline Container */}
-      <div className="px-2">
-        <div ref={timelineRef} className="w-full" />
-      </div>
+      {/* Main Waveform Bed with dB Ruler Gutter */}
+      <div className="relative flex-1 flex overflow-hidden daw-waveform-bed">
 
-      {/* Waveform container */}
-      <div 
-        className="relative rounded-xl overflow-hidden bg-[#10141a] p-2 flex-1 flex flex-col justify-center border-t border-b border-white/5"
-        style={{ '--region-start-time': `'${formatTime(regionStart)}'`, '--region-end-time': `'${formatTime(regionEnd)}'` }}
-      >
+        {/* Left amplitude scale gutter (Audition / Audacity style) */}
+        <div
+          aria-hidden="true"
+          className="w-9 flex-shrink-0 bg-[#17191d] border-r border-[#2b2f37] flex flex-col justify-between py-7 px-1 text-[9px] font-mono text-slate-500 select-none text-right"
+        >
+          <span>0dB</span>
+          <span>-6</span>
+          <span className="text-slate-400">-∞</span>
+          <span>-6</span>
+          <span>0dB</span>
+        </div>
 
-        {/* Instructional Helper Overlay */}
-        {isReady && !hasCropped && !isPlaying && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10">
-            <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 shadow-2xl animate-pulse-slow flex items-center gap-3">
-              <svg className="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
-              <span className="text-sm font-bold text-white tracking-wide">Drag the left & right edges to select crop region</span>
+        {/* Waveform Stage */}
+        <div
+          className="relative flex-1 flex flex-col overflow-hidden"
+          style={{
+            '--region-start-time': `'${formatTime(regionStart)}'`,
+            '--region-end-time':   `'${formatTime(regionEnd)}'`,
+          }}
+        >
+          {/* Center 0-line axis */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0 right-0 top-[calc(50%+11px)] h-px bg-white/[0.08] z-0"
+          />
+
+          {/* Analyzing overlay */}
+          {cuts === null && isReady && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#141619]/80 z-30 pointer-events-none">
+              <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs font-medium text-slate-300">Scanning waveform &amp; silences…</p>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Loading Progress Bar Overlay */}
-        {isLoading && !errorMsg && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-[#0d0d14]/95 z-20">
-            {/* Animated waveform bars */}
-            <div className="flex items-end gap-1 h-10">
-              {[0.4, 0.7, 1, 0.85, 0.6, 0.9, 0.5, 0.75, 1, 0.65].map((h, i) => (
-                <div
-                  key={i}
-                  className="w-1.5 rounded-full bg-brand-500"
-                  style={{
-                    height: `${h * 100}%`,
-                    animation: `waveBar 1.2s ease-in-out ${i * 0.1}s infinite alternate`,
-                    opacity: 0.6 + h * 0.4,
-                  }}
-                />
-              ))}
-            </div>
-
-            <div className="w-64 space-y-2">
-              {/* Indeterminate progress track */}
-              <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-brand-500 via-cyan-400 to-brand-500"
-                  style={{ animation: 'loadingSlide 1.8s ease-in-out infinite', backgroundSize: '200% 100%' }}
-                />
-              </div>
-              <p className="text-xs font-semibold text-slate-400 text-center tracking-wide">
-                Loading audio…
+          {/* Loading overlay */}
+          {isLoading && !errorMsg && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-[#101214]/95 z-20">
+              <div className="w-5 h-5 border-2 border-accent-emerald border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs font-medium text-slate-400">
+                {peaks?.length && durationProp ? 'Rendering peaks…' : 'Decoding audio…'}
               </p>
             </div>
+          )}
 
-            <style>{`
-              @keyframes waveBar {
-                from { transform: scaleY(0.3); opacity: 0.4; }
-                to   { transform: scaleY(1);   opacity: 1;   }
-              }
-              @keyframes loadingSlide {
-                0%   { transform: translateX(-100%); }
-                100% { transform: translateX(200%); }
-              }
-            `}</style>
-          </div>
-        )}
+          {/* Error message */}
+          {errorMsg && (
+            <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-[#1a1416] z-20 text-center">
+              <p className="text-xs font-semibold text-red-400">{errorMsg}</p>
+              <p className="text-[11px] text-slate-400 mt-1">Verify the file exists and is a valid audio format.</p>
+            </div>
+          )}
 
-        {/* Error message */}
-        {errorMsg && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-red-500/10 z-20 text-center">
-            <p className="text-xs font-bold text-red-400">{errorMsg}</p>
-            <p className="text-[11px] text-slate-400 mt-1">Please try re-dropping or choosing a valid audio file.</p>
-          </div>
-        )}
+          {/* WaveSurfer Mount (TimelinePlugin prepends inside #waveform) */}
+          <div ref={containerRef} id="waveform" className="w-full h-full flex-1 z-10" />
 
-        {/* WaveSurfer mount point */}
-        <div ref={containerRef} id="waveform" className="w-full h-full flex-1" />
-
-        {/* Time overlay */}
-        {isReady && (
-          <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between pointer-events-none">
-            <span className="text-xs font-mono font-bold text-cyan-400">{formatTime(currentTime)}</span>
-            <span className="text-xs font-mono text-slate-400">{formatTime(duration)}</span>
-          </div>
-        )}
+          {/* Digital Timecode HUD (bottom corners of lane) */}
+          {isReady && (
+            <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between pointer-events-none z-20">
+              <span className="px-2 py-0.5 rounded bg-[#141619]/90 border border-[#2c3038] text-[11px] font-mono font-semibold text-accent-amber">
+                {formatTime(currentTime)}
+              </span>
+              <span className="px-2 py-0.5 rounded bg-[#141619]/90 border border-[#2c3038] text-[11px] font-mono text-slate-400">
+                {formatTime(duration)}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Transport & Zoom Controls */}
-      {isReady && (
-        <div className="flex items-center justify-between px-2 pt-2">
-          
-          {/* Left: Crop Stats Panels */}
-          <div className="flex items-center gap-3">
-            <div className="bg-[#1a1a24] border border-white/5 rounded-lg px-4 py-2">
-              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Crop In</p>
-              <p className="text-sm font-mono font-bold text-white">{formatTime(regionStart)}</p>
-            </div>
-            <div className="bg-[#1a1a24] border border-brand-500/30 rounded-lg px-4 py-2">
-              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Selected Length</p>
-              <p className="text-sm font-mono font-bold text-cyan-400">{formatTime(regionEnd - regionStart)}</p>
-            </div>
-            <div className="bg-[#1a1a24] border border-white/5 rounded-lg px-4 py-2">
-              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Crop Out</p>
-              <p className="text-sm font-mono font-bold text-white">{formatTime(regionEnd)}</p>
-            </div>
-          </div>
+      {/* Bottom DAW Transport & Selection Telemetry Bar */}
+      <div className="flex-shrink-0 px-4 py-2.5 bg-[#1a1d22] border-t border-[#2b2f37] flex items-center justify-between gap-4">
 
-          {/* Center: Playback Transport */}
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={seekToStart}
-              className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 transition-colors"
-              title="Jump to Crop In"
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
-              </svg>
-            </button>
-
-            <button
-              type="button"
-              onClick={togglePlay}
-              className="w-14 h-14 rounded-full bg-[#9d4edd] hover:bg-[#b565f6] active:scale-95 flex items-center justify-center transition-all duration-150 shadow-lg shadow-purple-500/20 cursor-pointer"
-              title={isPlaying ? 'Pause' : 'Play from Crop In'}
-            >
-              {isPlaying ? (
-                <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-                </svg>
-              ) : (
-                <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={seekToEnd}
-              className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 transition-colors"
-              title="Jump to Crop Out"
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M6 18l8.5-6L6 6v12zm2.5-6L6 6v12l8.5-6zm8-7h2v12h-2z" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Right: Zoom & Fullscreen Controls */}
-          <div className="flex items-center gap-4 text-xs text-slate-400">
-            <div className="flex items-center gap-3">
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
-              </svg>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                step="5"
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="zoom-slider w-28 h-1.5 bg-slate-800 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-[#9d4edd] [&::-webkit-slider-thumb]:rounded-sm"
-                title="Zoom waveform"
-                style={{ background: `linear-gradient(to right, #9d4edd ${(zoom/200)*100}%, #1e293b ${(zoom/200)*100}%)` }}
-              />
-              <span className="w-14 text-right font-mono text-[10px] text-slate-500">Zoom {zoom === 0 ? 'Fit' : `${zoom}%`}</span>
-            </div>
-
-            {/* Fullscreen Toggle */}
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              className="btn-ghost px-3 py-1.5 rounded-lg border border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"
-              title="Toggle Fullscreen"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-              </svg>
-              <span className="font-medium">Fit</span>
-            </button>
-          </div>
+        {/* Left: Telemetry Readout */}
+        <div className="flex items-center gap-3 text-xs font-mono">
+          {isMultiCutMode ? (
+            <>
+              <div className="px-2.5 py-1 rounded bg-[#121417] border border-[#2a2e36]">
+                <span className="text-[10px] text-slate-500 uppercase mr-1.5">Cuts</span>
+                <span className="text-slate-100 font-semibold">{enabledCuts.length}</span>
+              </div>
+              <div className="px-2.5 py-1 rounded bg-[#121417] border border-[#2a2e36]">
+                <span className="text-[10px] text-slate-500 uppercase mr-1.5">Saved</span>
+                <span className="text-accent-red font-semibold">−{formatTime(timeSaved)}</span>
+              </div>
+              <div className="px-2.5 py-1 rounded bg-[#121417] border border-[#2a2e36]">
+                <span className="text-[10px] text-slate-500 uppercase mr-1.5">Net</span>
+                <span className="text-accent-emerald font-semibold">{formatTime(netDuration)}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="px-2.5 py-1 rounded bg-[#121417] border border-[#2a2e36]">
+                <span className="text-[10px] text-slate-500 uppercase mr-1.5">In</span>
+                <span className="text-slate-100 font-semibold">{formatTime(regionStart)}</span>
+              </div>
+              <div className="px-2.5 py-1 rounded bg-[#121417] border border-[#2a2e36]">
+                <span className="text-[10px] text-slate-500 uppercase mr-1.5">Out</span>
+                <span className="text-slate-100 font-semibold">{formatTime(regionEnd)}</span>
+              </div>
+            </>
+          )}
         </div>
-      )}
+
+        {/* Center: Hardware-Style Transport Controls */}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={seekToStart}
+            disabled={!isReady}
+            aria-label="Jump to start"
+            title="Jump to start"
+            className="w-8 h-8 rounded bg-[#22262d] hover:bg-[#2c313b] border border-[#343944] flex items-center justify-center text-slate-300 disabled:opacity-40 cursor-pointer"
+          >
+            <svg aria-hidden="true" className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => nudgeTime(-5)}
+            disabled={!isReady}
+            aria-label="Rewind 5 seconds"
+            title="Rewind 5s"
+            className="px-2 h-8 rounded bg-[#22262d] hover:bg-[#2c313b] border border-[#343944] text-[10px] font-mono text-slate-300 disabled:opacity-40 cursor-pointer"
+          >
+            -5s
+          </button>
+
+          <button
+            type="button"
+            onClick={togglePlay}
+            disabled={!isReady}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+            title={isPlaying ? 'Pause (Space)' : 'Play edited preview (Space)'}
+            className={[
+              'w-10 h-8 rounded border flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40',
+              isPlaying
+                ? 'bg-accent-amber border-amber-400 text-[#141619]'
+                : 'bg-brand-600 hover:bg-brand-500 border-brand-400/40 text-white',
+            ].join(' ')}
+          >
+            {isPlaying ? (
+              <svg aria-hidden="true" className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+              </svg>
+            ) : (
+              <svg aria-hidden="true" className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => nudgeTime(5)}
+            disabled={!isReady}
+            aria-label="Forward 5 seconds"
+            title="Forward 5s"
+            className="px-2 h-8 rounded bg-[#22262d] hover:bg-[#2c313b] border border-[#343944] text-[10px] font-mono text-slate-300 disabled:opacity-40 cursor-pointer"
+          >
+            +5s
+          </button>
+
+          <button
+            type="button"
+            onClick={seekToEnd}
+            disabled={!isReady}
+            aria-label="Jump to end"
+            title="Jump to end"
+            className="w-8 h-8 rounded bg-[#22262d] hover:bg-[#2c313b] border border-[#343944] flex items-center justify-center text-slate-300 disabled:opacity-40 cursor-pointer"
+          >
+            <svg aria-hidden="true" className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6h-2z" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Right: Zoom & Fullscreen */}
+        <div className="flex items-center gap-2.5 text-xs text-slate-400">
+          <label htmlFor="waveform-zoom" className="sr-only">Waveform Zoom</label>
+          <svg aria-hidden="true" className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+          </svg>
+          <input
+            id="waveform-zoom"
+            type="range"
+            min="0"
+            max="200"
+            step="5"
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+            className="w-24 accent-brand-500 cursor-pointer"
+          />
+          <span className="w-11 text-right font-mono text-[10px] text-slate-400">
+            {zoom === 0 ? 'Fit' : `${zoom}px`}
+          </span>
+          <button
+            type="button"
+            onClick={() => setZoom(0)}
+            className="btn-secondary text-[10px] py-1 px-2"
+            title="Fit entire waveform to view"
+          >
+            Fit
+          </button>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-label="Toggle Fullscreen"
+            title="Toggle Fullscreen"
+            className="btn-secondary p-1.5"
+          >
+            <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

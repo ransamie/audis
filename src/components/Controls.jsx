@@ -1,131 +1,276 @@
 /**
  * src/components/Controls.jsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Export button panel and processing progress display.
- * Designed with a full-width hero Export button, status checklist, and progress.
+ * Matte Studio Export & Cut Inspector Panel.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import React from 'react'
 
-// ── Utility: format seconds → M:SS ─────────────────────────────────────────
-function fmt (s) {
+function fmt(s) {
   if (!isFinite(s) || isNaN(s)) return '—'
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
-export default function Controls ({
-  canExport,
-  isProcessing,
-  progress,
-  timemark,
-  cropStart,
-  cropEnd,
-  outputPath,
-  onExport,
-  missingSteps,
+function fmtPrecise(s) {
+  if (!isFinite(s) || isNaN(s)) return '0:00.0'
+  const m = Math.floor(s / 60)
+  const sec = (s % 60).toFixed(1).padStart(4, '0')
+  return `${m}:${sec}`
+}
+
+const REASON_LABELS = {
+  leading_silence:  'Start Silence',
+  trailing_silence: 'End Silence',
+  long_pause:       'Long Pause',
+  filler:           'Filler',
+  retake:           'Retake',
+  manual_cut:       'Manual Cut',
+}
+
+function KeyboardCheatsheet() {
+  const shortcuts = [
+    { keys: 'Space',        action: 'Play / Pause (skip-preview)' },
+    { keys: 'Tab / ⇧Tab',  action: 'Next / prev cut + audition' },
+    { keys: 'D',            action: 'Toggle active cut on / off' },
+    { keys: 'C',            action: 'Add cut at playhead' },
+    { keys: 'I / O',        action: 'Toggle Intro / Outro' },
+    { keys: 'Enter',        action: 'Approve & Next' },
+    { keys: 'Esc',          action: 'Skip / defer item' },
+    { keys: '⌘/Ctrl + A',   action: 'Auto-approve clean items' },
+    { keys: '⌘/Ctrl + Z',   action: 'Undo last cut edit' },
+    { keys: '⌘/Ctrl + ←/→', action: 'Previous / Next item' },
+  ]
+  return (
+    <details className="group text-[11px]">
+      <summary className="cursor-pointer text-slate-400 hover:text-slate-200 transition-colors select-none flex items-center gap-1.5 font-medium py-1">
+        <svg aria-hidden="true" className="w-3 h-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+        Keyboard shortcuts
+      </summary>
+      <div className="mt-1.5 rounded-md bg-[#121417] border border-[#2b2f37] overflow-hidden">
+        {shortcuts.map(({ keys, action }) => (
+          <div key={keys} className="flex items-center justify-between px-2.5 py-1 border-b border-[#22262d] last:border-0">
+            <span className="text-slate-400">{action}</span>
+            <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#1d2026] border border-[#323742] text-slate-200">
+              {keys}
+            </kbd>
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+export default function Controls({
+  activeItem,
+  queueTotal,
+  queueDone,
+  queueExporting,
+  onApproveAndNext,
+  onSkip,
+  onAutoApprove,
+  onOpenOutputFolder,
+  onToggleCut,
+  onRenameTitle,
   settings,
 }) {
-  const cropDur  = isFinite(cropEnd - cropStart) ? cropEnd - cropStart : 0
+  const pct = (queueDone / Math.max(1, queueTotal)) * 100
+  const isApproveDisabled =
+    !activeItem ||
+    activeItem.analysisStatus !== 'ready' ||
+    activeItem.exportStatus !== 'pending'
+
+  const cuts = activeItem?.cuts ?? []
 
   return (
-    <div className="space-y-4">
-      {/* Export Settings Summary */}
-      <div className="flex flex-col gap-1 text-[11px] font-mono text-slate-400 bg-surface-muted/30 p-3 rounded-lg border border-white/5">
-        <div className="flex justify-between">
-          <span>Format:</span>
-          <span className="text-white font-semibold">
-            {settings?.exportFormat === 'original' ? 'Original' : settings?.exportFormat?.toUpperCase()}
+    <div className="flex flex-col h-full gap-4 overflow-hidden">
+
+      {/* 1. Batch Queue Progress */}
+      <div className="p-3.5 rounded-md bg-[#141619] border border-[#2b2f37] space-y-2.5 flex-shrink-0" aria-live="polite">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">
+            Batch Queue
+          </span>
+          <span className="text-xs font-mono font-semibold text-slate-200">
+            {queueDone}/{queueTotal}
           </span>
         </div>
-        <div className="flex justify-between">
-          <span>Crossfade:</span>
-          <span className="text-white font-semibold">{settings?.fadeDuration ?? 2}s</span>
+        <div className="h-1.5 rounded-full bg-[#242830] overflow-hidden">
+          <div
+            className="h-full bg-brand-500 transition-all duration-300"
+            style={{ width: `${pct}%` }}
+          />
         </div>
-        <div className="flex justify-between">
-          <span>Duration:</span>
-          <span className="text-brand-300 font-semibold">{cropDur > 0 ? fmt(cropDur) : '—'}</span>
-        </div>
+        {queueExporting > 0 && (
+          <p className="text-[11px] text-slate-400 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-brand-400 animate-pulse" />
+            {queueExporting} rendering in background…
+          </p>
+        )}
+        {queueDone === queueTotal && queueTotal > 0 && (
+          <button type="button" onClick={onOpenOutputFolder} className="btn-primary w-full py-1.5">
+            Open Output Folder
+          </button>
+        )}
       </div>
 
-      {/* Real-time Progress Bar */}
-      {isProcessing && (
-        <div className="glass-card p-4 space-y-2 animate-fade-in border-brand-500/40">
-          <div className="flex items-center justify-between text-xs font-semibold">
-            <span className="text-white flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-brand-400 animate-ping" />
-              Processing FFmpeg Pipeline…
-            </span>
-            <span className="font-mono text-cyan-400 text-sm font-bold">{progress}%</span>
-          </div>
-
-          <div className="h-2.5 rounded-full bg-surface-base overflow-hidden border border-white/5">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-brand-500 via-brand-400 to-accent-cyan transition-all duration-300"
-              style={{ width: `${progress}%` }}
+      {/* 2. Output Title & Cut List Inspector */}
+      {activeItem && (
+        <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+          {/* Output Title */}
+          <div className="flex-shrink-0">
+            <label htmlFor="inspector-output-title" className="field-label">
+              Output Title
+            </label>
+            <input
+              id="inspector-output-title"
+              type="text"
+              value={activeItem.suggestedTitle || ''}
+              onChange={(e) => onRenameTitle?.(activeItem.id, e.target.value)}
+              placeholder={activeItem.fileName}
+              className="input-field font-mono text-xs"
             />
           </div>
 
-          {timemark && (
-            <p className="text-[11px] font-mono text-slate-400 text-right">Time: {timemark}</p>
-          )}
-        </div>
-      )}
+          {/* Detected Cuts List */}
+          <div className="flex-1 min-h-0 flex flex-col rounded-md bg-[#141619] border border-[#2b2f37] overflow-hidden">
+            <div className="px-3 py-2 border-b border-[#252930] flex items-center justify-between flex-shrink-0">
+              <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                Edit Cuts ({cuts.filter(c => c.enabled !== false).length}/{cuts.length})
+              </span>
+              {activeItem.analysisStatus === 'analyzing' && (
+                <span className="text-[10px] text-accent-cyan font-mono">Scanning…</span>
+              )}
+            </div>
 
-      {/* Output Success Banner */}
-      {outputPath && !isProcessing && (
-        <div className="flex items-start gap-3 p-3.5 rounded-xl bg-green-500/10 border border-green-500/30 animate-fade-in">
-          <svg className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/>
-          </svg>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-green-300">Export Complete!</p>
-            <p className="text-[11px] font-mono text-slate-300 truncate mt-0.5" title={outputPath}>
-              {outputPath?.split(/[\\/]/).pop()}
-            </p>
+            <div className="flex-1 overflow-y-auto divide-y divide-[#20232a]">
+              {cuts.length === 0 ? (
+                <p className="text-[11px] text-slate-500 p-3 text-center">
+                  {activeItem.analysisStatus === 'ready'
+                    ? 'No silences or cuts flagged.'
+                    : 'Waiting for analysis…'}
+                </p>
+              ) : (
+                cuts.map((cut) => {
+                  const enabled = cut.enabled !== false
+                  return (
+                    <button
+                      key={cut.id}
+                      type="button"
+                      onClick={() => onToggleCut?.(activeItem.id, cut.id)}
+                      className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors hover:bg-[#1d2026] cursor-pointer ${
+                        enabled ? 'text-slate-200' : 'text-slate-500 line-through'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium truncate">
+                          {REASON_LABELS[cut.reason] || cut.reason}
+                        </p>
+                        <p className="text-[10px] font-mono text-slate-400">
+                          {fmtPrecise(cut.start)} – {fmtPrecise(cut.end)}
+                          {cut.postPauseSec ? ` (→ ${cut.postPauseSec}s)` : ''}
+                        </p>
+                      </div>
+                      <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border flex-shrink-0 ${
+                        enabled
+                          ? 'bg-red-500/15 text-red-300 border-red-500/35'
+                          : 'bg-[#1c1f24] text-slate-500 border-[#2e323a]'
+                      }`}>
+                        {enabled ? 'CUT' : 'KEEP'}
+                      </span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Render Chain Summary */}
+          <div className="flex-shrink-0 p-3 rounded-md bg-[#141619] border border-[#2b2f37] space-y-1 text-[11px] font-mono">
+            <div className="flex justify-between text-slate-400">
+              <span>Format</span>
+              <span className="text-slate-200 font-semibold">
+                {settings?.exportFormat === 'original' ? 'Original' : (settings?.exportFormat?.toUpperCase() ?? 'MP3')}
+              </span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Crossfade</span>
+              <span className="text-slate-200">{settings?.fadeDuration ?? 2}s</span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Intro / Outro</span>
+              <span className="text-slate-200">
+                {activeItem.useIntro ? 'IN' : '—'} / {activeItem.useOutro ? 'OUT' : '—'}
+              </span>
+            </div>
+            {!activeItem.useIntro && !activeItem.useOutro && (
+              <div className="flex justify-between text-slate-400">
+                <span>Loudness</span>
+                <span className="text-slate-200">
+                  {settings?.loudnormEnabled !== false ? '-16 LUFS' : 'Bypassed'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* FULL WIDTH HERO EXPORT BUTTON */}
-      <div className="relative group">
-        {!canExport && missingSteps?.length > 0 && (
-          <div className="absolute bottom-full left-0 right-0 mb-3 p-3 rounded-lg bg-surface-card border border-amber-500/30 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-            <p className="text-xs font-bold text-amber-400 mb-1">Missing Requirements:</p>
-            <ul className="text-[11px] text-slate-300 space-y-1 list-disc list-inside">
-              {missingSteps.map((s, i) => <li key={i}>{s.label}</li>)}
-            </ul>
+      {/* Active item progress when exporting */}
+      {activeItem?.exportStatus === 'exporting' && (
+        <div className="p-3 rounded-md bg-[#141619] border border-brand-500/40 space-y-1.5 flex-shrink-0">
+          <div className="flex justify-between text-xs font-medium">
+            <span className="text-slate-200">Rendering FFmpeg…</span>
+            <span className="font-mono text-brand-400">{activeItem.exportProgress?.percent ?? 0}%</span>
           </div>
-        )}
+          <div className="h-1.5 rounded-full bg-[#242830] overflow-hidden">
+            <div
+              className="h-full bg-brand-500 transition-all duration-200"
+              style={{ width: `${activeItem.exportProgress?.percent ?? 0}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Primary Actions */}
+      <div className="space-y-2 flex-shrink-0">
         <button
           type="button"
-          onClick={onExport}
-          disabled={!canExport || isProcessing}
-          className={[
-            'w-full py-4 px-6 rounded-xl font-bold text-sm tracking-wider uppercase whitespace-nowrap',
-            'flex items-center justify-center gap-3 transition-all duration-200 cursor-pointer',
-            canExport && !isProcessing
-              ? 'bg-gradient-to-r from-brand-600 via-brand-500 to-accent-cyan text-white shadow-[0_0_24px_rgba(96,48,255,0.45)] hover:shadow-[0_0_36px_rgba(96,48,255,0.7)] hover:scale-[1.01] active:scale-[0.98]'
-              : 'bg-surface-hover border border-white/10 text-slate-500 cursor-not-allowed opacity-50 shadow-none'
-          ].join(' ')}
+          onClick={onApproveAndNext}
+          disabled={isApproveDisabled}
+          className="w-full py-2.5 px-4 rounded-md font-semibold text-xs tracking-wide uppercase flex items-center justify-center gap-2 transition-colors bg-brand-600 hover:bg-brand-500 active:bg-brand-700 border border-brand-400/30 text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
-          {isProcessing ? (
-            <>
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Stitching Audio ({progress}%)</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              <span>{canExport ? 'Export Final Audio' : 'Incomplete'}</span>
-            </>
-          )}
+          <svg aria-hidden="true" className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span>Approve &amp; Next</span>
+          <kbd className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-black/25 border border-white/15 font-mono">
+            Enter
+          </kbd>
         </button>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onSkip}
+            disabled={!activeItem}
+            className="btn-secondary py-1.5"
+          >
+            Skip (Esc)
+          </button>
+          <button
+            type="button"
+            onClick={onAutoApprove}
+            className="btn-secondary py-1.5"
+          >
+            Auto-Clean
+          </button>
+        </div>
+
+        <KeyboardCheatsheet />
       </div>
     </div>
   )
