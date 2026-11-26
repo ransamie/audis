@@ -135,12 +135,27 @@ export function snapToSilence(cutsOrCut, silences, padding = 0.08) {
  * @returns {Promise<number[]>}  - Array of floats in [0, 1]
  */
 export function getPeaks(filePath, samples = 500) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (val) => {
+      if (!settled) {
+        settled = true
+        resolve(val)
+      }
+    }
+
     const ffProc = ffmpeg(filePath)
       .noVideo()
       .audioChannels(1)
       .audioFrequency(4000)
       .format('s8')
+      .on('error', err => {
+        // fluent-ffmpeg can emit "Output stream closed" on ffProc if stdout closes >20ms before exit
+        if (!settled) {
+          console.warn('[Audis Analyzer] getPeaks warning:', err.message)
+          finish([])
+        }
+      })
 
     const ffStream = ffProc.pipe()
     const chunks   = []
@@ -148,7 +163,7 @@ export function getPeaks(filePath, samples = 500) {
     ffStream.on('data',  chunk => chunks.push(chunk))
     ffStream.on('error', err   => {
       console.warn('[Audis Analyzer] getPeaks warning:', err.message)
-      resolve([])
+      finish([])
     })
     ffStream.on('end', () => {
       const fullBuf = Buffer.concat(chunks)
@@ -171,7 +186,7 @@ export function getPeaks(filePath, samples = 500) {
         }
       }
 
-      resolve(peaks)
+      finish(peaks)
     })
   })
 }

@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 
 export default function App() {
-  const { urls } = useLatestRelease()
+  const { urls, version } = useLatestRelease()
 
   return (
     <div className="min-h-screen bg-surface-base text-slate-100 font-sans selection:bg-brand-500/30 selection:text-brand-300 relative overflow-x-hidden">
@@ -99,7 +99,7 @@ export default function App() {
 
         <div className="mt-8 flex items-center justify-center gap-6 text-xs text-slate-500">
           <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-brand-400" /> Free & Open Source</span>
-          <span className="flex items-center gap-1.5"><Sparkles className="w-4 h-4 text-accent-cyan" /> Official Release v1.0.0</span>
+          <span className="flex items-center gap-1.5"><Sparkles className="w-4 h-4 text-accent-cyan" /> Official Release {version}</span>
           <span className="flex items-center gap-1.5"><Zap className="w-4 h-4 text-accent-amber" /> Powered by FFmpeg</span>
         </div>
       </section>
@@ -169,7 +169,7 @@ export default function App() {
             <h3 className="text-base font-bold text-white mb-2">Crossfade & Loudness</h3>
             <p className="text-sm text-slate-400 leading-relaxed">
               Configurable crossfades between intro, main, and outro. Optional -16 LUFS loudness
-              normalization and export to MP3, WAV, AAC, or FLAC without re-en coding quality loss.
+              normalization and export to 320 kbps MP3/AAC or lossless WAV/FLAC.
             </p>
           </div>
 
@@ -236,7 +236,7 @@ export default function App() {
             <h3 className="text-base font-bold text-white mb-2">Batch Export</h3>
             <p className="text-sm text-slate-400">
               Approve each track and Audis stitches intro + main + outro with crossfades into your
-              output folder — all without re-encoding quality loss.
+              output folder — with clean 320 kbps or lossless export.
             </p>
           </div>
         </div>
@@ -250,7 +250,7 @@ export default function App() {
             Ready to Accelerate Your Audio Pipeline?
           </h2>
           <p className="text-slate-300 text-lg max-w-xl mx-auto mb-10">
-            Select your platform below to download Audis v1.1.0 directly.
+            Select your platform below to download Audis {version} directly.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-2xl mx-auto">

@@ -50,6 +50,15 @@ export default function App () {
   const queueRef = useRef(queue)
   useEffect(() => { queueRef.current = queue }, [queue])
 
+  // Revoke any remaining Blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      queueRef.current.forEach(item => {
+        if (item.blobUrl) URL.revokeObjectURL(item.blobUrl)
+      })
+    }
+  }, [])
+
   // Load settings
   useEffect(() => {
     if (window.electronAPI?.getSettings) {
@@ -201,24 +210,26 @@ export default function App () {
     }
   }, [handleFilesAccepted])
 
-  const buildExportPayload = useCallback((item, index) => {
+  const buildExportPayload = useCallback((item, index, isLastBatchItem = false) => {
     const useLegacyCrop = (!item.cuts || item.cuts.length === 0) && cropRegion.end > cropRegion.start
     return {
-      mainPath:        item.filePath,
-      startTime:       useLegacyCrop ? cropRegion.start : 0,
-      endTime:         useLegacyCrop ? cropRegion.end   : (item.duration || undefined),
-      cuts:            (item.cuts || []).filter(c => c.enabled !== false),
-      suggestedTitle:  item.suggestedTitle || deriveFallbackTitle(item.fileName),
-      fileIndex:       index + 1,
-      introPath:       item.useIntro ? settings?.introPath : null,
-      outroPath:       item.useOutro ? settings?.outroPath : null,
-      useIntro:        Boolean(item.useIntro && settings?.introPath),
-      useOutro:        Boolean(item.useOutro && settings?.outroPath),
-      outputDir:       settings?.outputDir,
-      exportFormat:    settings?.exportFormat || 'original',
-      fadeDuration:    settings?.fadeDuration ?? 2,
-      loudnormEnabled: settings?.loudnormEnabled ?? true,
-      batchMode:       true,
+      mainPath:           item.filePath,
+      startTime:          useLegacyCrop ? cropRegion.start : 0,
+      endTime:            useLegacyCrop ? cropRegion.end   : (item.duration || undefined),
+      cuts:               (item.cuts || []).filter(c => c.enabled !== false),
+      suggestedTitle:     item.suggestedTitle || deriveFallbackTitle(item.fileName),
+      fileIndex:          index + 1,
+      introPath:          item.useIntro ? settings?.introPath : null,
+      outroPath:          item.useOutro ? settings?.outroPath : null,
+      useIntro:           Boolean(item.useIntro && settings?.introPath),
+      useOutro:           Boolean(item.useOutro && settings?.outroPath),
+      outputDir:          settings?.outputDir,
+      exportFormat:       settings?.exportFormat || 'original',
+      fadeDuration:       settings?.fadeDuration ?? 2,
+      loudnormEnabled:    settings?.loudnormEnabled ?? true,
+      batchNamingPattern: settings?.batchNamingPattern || '{index}_{title}',
+      batchMode:          true,
+      isLastBatchItem,
     }
   }, [cropRegion, settings])
 
@@ -253,9 +264,10 @@ export default function App () {
       it.id === item.id ? { ...it, exportStatus: 'approved' } : it
     ))
 
+    const remainingPending = q.filter(i => i.id !== item.id && i.exportStatus === 'pending').length
     window.electronAPI?.enqueueExport?.({
       id:      item.id,
-      payload: buildExportPayload(item, idx),
+      payload: buildExportPayload(item, idx, remainingPending === 0),
     })
 
     advanceToNextPending(item.id, q)
@@ -275,14 +287,16 @@ export default function App () {
     if (cleanItems.length === 0) return
 
     const cleanIds = new Set(cleanItems.map(({ item }) => item.id))
+    const remainingAfter = q.filter(i => !cleanIds.has(i.id) && i.exportStatus === 'pending').length
     setQueue(prev => prev.map(it =>
       cleanIds.has(it.id) ? { ...it, exportStatus: 'approved' } : it
     ))
 
-    cleanItems.forEach(({ item, idx }) => {
+    cleanItems.forEach(({ item, idx }, i) => {
+      const isLast = remainingAfter === 0 && i === cleanItems.length - 1
       window.electronAPI?.enqueueExport?.({
         id:      item.id,
-        payload: buildExportPayload(item, idx),
+        payload: buildExportPayload(item, idx, isLast),
       })
     })
 
@@ -532,9 +546,8 @@ export default function App () {
             {/* Right: Controls Inspector (collapsible) */}
             <aside
               className={[
-                'flex-shrink-0 flex flex-col p-3.5 overflow-hidden relative transition-all duration-200 ease-out',
-                rightCollapsed ? 'w-4' : 'w-72',
-                !rightCollapsed ? 'border-l border-[#2b2f37] bg-[#181a1f]' : '',
+                'flex-shrink-0 flex flex-col overflow-hidden relative transition-all duration-200 ease-out',
+                rightCollapsed ? 'w-4 p-0' : 'w-72 p-3.5 border-l border-[#2b2f37] bg-[#181a1f]',
               ].join(' ')}
             >
               {!rightCollapsed && (
@@ -611,8 +624,12 @@ export default function App () {
         isOpen={metadataOpen}
         onClose={() => setMetadataOpen(false)}
         filePath={metadataFile}
-        onSaved={() => {
-          // Refresh analysis title if needed
+        onSaved={(updatedMeta) => {
+          if (updatedMeta?.title && metadataFile) {
+            setQueue(q => q.map(it =>
+              it.filePath === metadataFile ? { ...it, suggestedTitle: updatedMeta.title } : it
+            ))
+          }
         }}
       />
     </div>

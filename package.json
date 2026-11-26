@@ -1,6 +1,6 @@
 {
   "name": "audis",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "1-click audio processing desktop utility — Intro + Main + Outro stitching with crossfades, batch AI editing, metadata editor with cover art support, and DAW-style batch workstation",
   "type": "module",
   "main": "out/main/index.js",
@@ -70,13 +70,16 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "artifactName": "Audis-Setup-${version}.${ext}"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "artifactName": "Audis-${version}-${arch}.${ext}"
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "artifactName": "Audis-${version}.${ext}"
     }
   }
 }

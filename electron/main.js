@@ -252,6 +252,7 @@ const exportRunning = new Set()
 /** Batch tracking — set when a batch is initiated so we can fire batch:complete */
 let batchOutputDir  = null
 let batchTotalCount = 0
+let batchHasFinalItem = false
 
 /** How many export jobs run concurrently — read from settings at drain time */
 function getExportConcurrency () {
@@ -266,6 +267,7 @@ function getExportConcurrency () {
 function enqueueExport (id, payload) {
   if (exportRunning.has(id) || exportQueue.some(x => x.id === id)) return
   exportQueue.push({ id, payload })
+  if (payload?.isLastBatchItem) batchHasFinalItem = true
   // Track batch output dir from the first payload that has one
   if (payload.outputDir && !batchOutputDir) {
     batchOutputDir  = payload.outputDir
@@ -307,9 +309,10 @@ async function runExport (id, payload) {
     const introPath = payload.introPath !== undefined ? payload.introPath : settings.introPath
     const outroPath = payload.outroPath !== undefined ? payload.outroPath : settings.outroPath
     const outputDir = payload.outputDir || settings.outputDir
-    const exportFormat  = payload.exportFormat  || settings.exportFormat  || 'original'
-    const fadeDuration  = payload.fadeDuration  ?? settings.fadeDuration  ?? 2
-    const loudnormEnabled = payload.loudnormEnabled ?? settings.loudnormEnabled ?? true
+    const exportFormat       = payload.exportFormat       || settings.exportFormat  || 'original'
+    const fadeDuration       = payload.fadeDuration       ?? settings.fadeDuration  ?? 2
+    const loudnormEnabled    = payload.loudnormEnabled    ?? settings.loudnormEnabled ?? true
+    const batchNamingPattern = payload.batchNamingPattern || settings.batchNamingPattern || '{index}_{title}'
 
     const result = await processAudio({
       ...payload,
@@ -319,6 +322,7 @@ async function runExport (id, payload) {
       exportFormat,
       fadeDuration,
       loudnormEnabled,
+      batchNamingPattern,
       onProgress: (progress) => {
         send('export:progress', {
           id,
@@ -354,20 +358,23 @@ async function runExport (id, payload) {
   } finally {
     exportRunning.delete(id)
 
-    // Check for batch completion
+    // Check for batch completion (avoid firing per-item OS toast between user reviews)
     if (exportQueue.length === 0 && exportRunning.size === 0 && batchOutputDir) {
-      const outputDir = batchOutputDir
-      const count     = batchTotalCount
-      batchOutputDir  = null
-      batchTotalCount = 0
+      const outputDir    = batchOutputDir
+      const count        = batchTotalCount
+      const shouldNotify = batchHasFinalItem || count > 1
+      batchOutputDir     = null
+      batchTotalCount    = 0
+      batchHasFinalItem  = false
 
-      send('batch:complete', { totalCount: count, outputDir })
-
-      if (Notification.isSupported()) {
-        new Notification({
-          title: '✅ Audis — Batch Complete',
-          body:  `${count} files exported to ${outputDir}`,
-        }).show()
+      if (shouldNotify) {
+        send('batch:complete', { totalCount: count, outputDir })
+        if (Notification.isSupported()) {
+          new Notification({
+            title: '✅ Audis — Batch Complete',
+            body:  `${count} file${count === 1 ? '' : 's'} exported to ${outputDir}`,
+          }).show()
+        }
       }
     } else {
       drainExportQueue()
@@ -649,8 +656,9 @@ ipcMain.handle('export:enqueue', async (_event, { id, payload }) => {
   try {
     // Reset batch tracker when first item of a new batch arrives
     if (exportQueue.length === 0 && exportRunning.size === 0) {
-      batchOutputDir  = payload?.outputDir || store.get('outputDir') || null
-      batchTotalCount = 0
+      batchOutputDir    = payload?.outputDir || store.get('outputDir') || null
+      batchTotalCount   = 0
+      batchHasFinalItem = Boolean(payload?.isLastBatchItem)
     }
     enqueueExport(id, payload)
     return { queued: true }

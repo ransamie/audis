@@ -14,6 +14,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import ffmpeg from 'fluent-ffmpeg'
+import { copyMetadataToOutput } from './metadata.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -86,22 +87,32 @@ function slugify(title) {
 }
 
 /**
- * Build a collision-safe output path.
- * Pattern: <outputDir>/<NN>_<slug>.<ext>
+ * Build a collision-safe output path honoring batchNamingPattern.
+ * Tokens supported: {index}, {title}, {original}, {date}
  * If the file already exists an incrementing suffix (_1, _2, …) is appended.
  *
  * @param {string} outputDir
- * @param {number} index      — numeric prefix (zero-padded to 2 digits)
- * @param {string} slug       — already-slugified title
- * @param {string} ext        — extension without leading dot
+ * @param {number} index
+ * @param {string} slug
+ * @param {string} ext
+ * @param {string} [pattern='{index}_{title}']
+ * @param {string} [originalSlug='audio']
  * @returns {string}
  */
-function buildOutputPath(outputDir, index, slug, ext) {
+function buildOutputPath(outputDir, index, slug, ext, pattern = '{index}_{title}', originalSlug = 'audio') {
   const prefix = String(index).padStart(2, '0')
-  let candidate = path.join(outputDir, `${prefix}_${slug}.${ext}`)
+  const today  = new Date().toISOString().slice(0, 10)
+  const rawName = (pattern || '{index}_{title}')
+    .replace(/\{index\}/gi, prefix)
+    .replace(/\{title\}/gi, slug)
+    .replace(/\{original\}/gi, originalSlug)
+    .replace(/\{date\}/gi, today)
+  const baseName = slugify(rawName)
+
+  let candidate = path.join(outputDir, `${baseName}.${ext}`)
   let n = 1
   while (fs.existsSync(candidate)) {
-    candidate = path.join(outputDir, `${prefix}_${slug}_${n}.${ext}`)
+    candidate = path.join(outputDir, `${baseName}_${n}.${ext}`)
     n++
   }
   return candidate
@@ -172,6 +183,7 @@ export async function processAudio({
   exportFormat = 'original',
   fadeDuration = 2,
   loudnormEnabled = true,
+  batchNamingPattern = '{index}_{title}',
   onProgress = () => {},
 }) {
 
@@ -210,11 +222,12 @@ export async function processAudio({
   if (!['mp3', 'wav', 'aac', 'flac', 'm4a'].includes(ext)) ext = 'mp3'
 
   // Build slug: use suggestedTitle if provided, else a timestamp fallback
+  const originalSlug = slugify(path.basename(mainPath, path.extname(mainPath)))
   const slug = suggestedTitle
     ? slugify(suggestedTitle)
     : `output_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`
 
-  const outputPath = buildOutputPath(outputDir, fileIndex, slug, ext)
+  const outputPath = buildOutputPath(outputDir, fileIndex, slug, ext, batchNamingPattern, originalSlug)
 
   // ── Probe main audio ──────────────────────────────────────────────────────
 
@@ -447,7 +460,12 @@ export async function processAudio({
         const pct = progress.percent ? Math.round(progress.percent) : 0
         onProgress({ percent: pct, timemark: progress.timemark })
       })
-      .on('end', () => resolve({ success: true, outputPath }))
+      .on('end', async () => {
+        await copyMetadataToOutput(mainPath, outputPath, {
+          title: suggestedTitle || undefined,
+        })
+        resolve({ success: true, outputPath })
+      })
       .on('error', (err) => reject(new Error(err.message)))
   })
 }

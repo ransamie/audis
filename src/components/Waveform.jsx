@@ -67,14 +67,16 @@ export default function Waveform({
   onToggleOutro,
   onApproveAndNext,
 }) {
-  const containerRef      = useRef(null)
-  const wrapperRef        = useRef(null)
-  const wavesurferRef     = useRef(null)
-  const regionsRef        = useRef(null)
-  const cutsRef           = useRef(cuts)
-  const isPlayingRef      = useRef(false)
-  const auditionStopAtRef = useRef(null)
-  const isMultiCutModeRef = useRef(false)
+  const containerRef       = useRef(null)
+  const stageRef           = useRef(null)
+  const wrapperRef         = useRef(null)
+  const wavesurferRef      = useRef(null)
+  const regionsRef         = useRef(null)
+  const cutsRef            = useRef(cuts)
+  const isPlayingRef       = useRef(false)
+  const auditionStopAtRef  = useRef(null)
+  const isMultiCutModeRef  = useRef(false)
+  const pendingZoomAnchorRef = useRef(null)
 
   const [isPlaying,    setIsPlaying]    = useState(false)
   const [isLoading,    setIsLoading]    = useState(true)
@@ -359,16 +361,26 @@ export default function Waveform({
     })
   }, [cuts, isReady, isMultiCutMode, activeCutId])
 
-  // Zoom slider
+  // Zoom slider + cursor-anchored scroll adjustment after zoom re-renders
   useEffect(() => {
-    if (!wavesurferRef.current || !isReady) return
+    const ws = wavesurferRef.current
+    if (!ws || !isReady) return
     try {
-      if (zoom === 0) {
-        const width = containerRef.current.clientWidth
-        const dur   = wavesurferRef.current.getDuration()
-        wavesurferRef.current.zoom(dur > 0 ? width / dur : 0)
-      } else {
-        wavesurferRef.current.zoom(zoom)
+      const container = containerRef.current
+      const dur = ws.getDuration()
+      const appliedPxPerSec = zoom === 0
+        ? (dur > 0 && container ? container.clientWidth / dur : 0)
+        : zoom
+
+      ws.zoom(appliedPxPerSec)
+
+      const anchor = pendingZoomAnchorRef.current
+      if (anchor && appliedPxPerSec > 0) {
+        pendingZoomAnchorRef.current = null
+        const scrollEl = ws.getWrapper()?.parentElement
+        if (scrollEl) {
+          scrollEl.scrollLeft = Math.max(0, anchor.timeAtCursor * appliedPxPerSec - anchor.cursorOffsetX)
+        }
       }
     } catch (e) {
       console.warn('[WaveSurfer Zoom Error]', e)
@@ -414,48 +426,39 @@ export default function Waveform({
     } catch {}
   }, [isReady, duration])
 
-  // Mouse-wheel zoom over the waveform area (scroll up = in, down = out)
-  const handleWheel = useCallback(
-    (e) => {
-      if (!wavesurferRef.current || !isReady) return
-      const container = containerRef.current
-      if (!container || !container.contains(e.target)) return
+  // Non-passive mouse-wheel zoom over waveform stage (scroll up = zoom in, down = out)
+  useEffect(() => {
+    const stageEl = stageRef.current
+    if (!stageEl) return
 
-      // Hijack the wheel so the page doesn't scroll while over the waveform
+    const onWheel = (e) => {
+      const ws = wavesurferRef.current
+      const container = containerRef.current
+      if (!ws || !isReady || !container) return
+
       e.preventDefault()
 
-      const ws = wavesurferRef.current
       const step = 15
-      const isZoomIn = e.deltaY < 0
-      const next = isZoomIn
+      const next = e.deltaY < 0
         ? Math.min(zoom + step, 500)
         : Math.max(zoom - step, 0)
-
       if (next === zoom) return
 
-      // Remember the time under the cursor so the zoom centers on it
       const rect = container.getBoundingClientRect()
       const dur  = ws.getDuration() || duration || 0
-      const currentPxPerSec =
-        zoom === 0 ? rect.width / Math.max(dur, 1) : zoom
-      const timeAtCursor = (e.clientX - rect.left) / currentPxPerSec
+      const scrollEl = ws.getWrapper()?.parentElement
+      const scrollLeft = scrollEl ? scrollEl.scrollLeft : 0
+      const currentPxPerSec = zoom === 0 ? rect.width / Math.max(dur, 1) : zoom
+      const cursorOffsetX   = Math.max(0, e.clientX - rect.left)
+      const timeAtCursor    = (cursorOffsetX + scrollLeft) / Math.max(currentPxPerSec, 0.001)
 
+      pendingZoomAnchorRef.current = next > 0 ? { timeAtCursor, cursorOffsetX } : null
       setZoom(next)
+    }
 
-      // Re-center so the time under the mouse stays under the mouse
-      if (dur > 0 && timeAtCursor >= 0 && next > 0) {
-        const targetPx = timeAtCursor * next
-        const newScroll = targetPx - rect.width / 2
-        try {
-          const scrollEl = container.querySelector('[part="scroll"]')
-          if (scrollEl) {
-            scrollEl.scrollLeft = Math.max(0, newScroll)
-          }
-        } catch {}
-      }
-    },
-    [zoom, isReady, duration, containerRef]
-  )
+    stageEl.addEventListener('wheel', onWheel, { passive: false })
+    return () => stageEl.removeEventListener('wheel', onWheel)
+  }, [zoom, isReady, duration])
 
   const auditionCut = useCallback((cut) => {
     const ws = wavesurferRef.current
@@ -671,8 +674,8 @@ export default function Waveform({
 
         {/* Waveform Stage */}
         <div
+          ref={stageRef}
           className="relative flex-1 flex flex-col overflow-hidden cursor-crosshair"
-          onWheel={handleWheel}
           style={{
             '--region-start-time': `'${formatTime(regionStart)}'`,
             '--region-end-time':   `'${formatTime(regionEnd)}'`,
@@ -847,7 +850,7 @@ export default function Waveform({
             id="waveform-zoom"
             type="range"
             min="0"
-            max="200"
+            max="500"
             step="5"
             value={zoom}
             onChange={(e) => setZoom(Number(e.target.value))}

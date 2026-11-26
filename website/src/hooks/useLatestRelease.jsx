@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react'
 
+const FALLBACK_VERSION = 'v1.1.1'
+
 // Fallback URLs — used if the GitHub API is unreachable or rate-limited
 const FALLBACK_URLS = {
-  windows: 'https://github.com/ransamie/audis/releases/download/v1.1.0/Audis-Setup-1.1.0.exe',
-  macos:   'https://github.com/ransamie/audis/releases/download/v1.1.0/Audis-1.1.0-arm64.dmg',
-  linux:   'https://github.com/ransamie/audis/releases/download/v1.1.0/Audis-1.1.0.AppImage',
+  windows: 'https://github.com/ransamie/audis/releases/download/v1.1.1/Audis-Setup-1.1.1.exe',
+  macos:   'https://github.com/ransamie/audis/releases/download/v1.1.1/Audis-1.1.1-arm64.dmg',
+  linux:   'https://github.com/ransamie/audis/releases/download/v1.1.1/Audis-1.1.1.AppImage',
 }
 
-const CACHE_KEY = 'audis_latest_release'
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+const CACHE_KEY = 'audis_latest_release_v2'
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes per tab session
 
 function getCachedRelease() {
   if (typeof sessionStorage === 'undefined') return null
@@ -17,6 +19,7 @@ function getCachedRelease() {
     if (!raw) return null
     const { data, timestamp } = JSON.parse(raw)
     if (Date.now() - timestamp > CACHE_TTL_MS) return null
+    if (!data?.urls || !data?.version) return null
     return data
   } catch {
     return null
@@ -34,16 +37,17 @@ function setCachedRelease(data) {
 
 export function useLatestRelease() {
   const [urls, setUrls] = useState(FALLBACK_URLS)
+  const [version, setVersion] = useState(FALLBACK_VERSION)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
 
     async function fetchLatestRelease() {
-      // Use cached data if available
       const cached = getCachedRelease()
       if (cached && !cancelled) {
-        setUrls(cached)
+        setUrls(cached.urls)
+        setVersion(cached.version)
         setLoading(false)
         return
       }
@@ -56,27 +60,49 @@ export function useLatestRelease() {
         if (!res.ok) throw new Error(`GitHub API responded ${res.status}`)
 
         const release = await res.json()
-        const assets = release.assets || []
+        const assets = Array.isArray(release.assets) ? release.assets : []
+        const tagVersion = release.tag_name || FALLBACK_VERSION
+        const fallbackPage = release.html_url || 'https://github.com/ransamie/audis/releases/latest'
 
-        const result = { ...FALLBACK_URLS }
+        const resultUrls = {
+          windows: fallbackPage,
+          macos: fallbackPage,
+          linux: fallbackPage,
+        }
+        let matchedAnyAsset = false
 
-        assets.forEach((asset) => {
-          const name = asset.name.toLowerCase()
+        for (const asset of assets) {
+          const name = String(asset.name || '').toLowerCase()
           const url = asset.browser_download_url
-          if (name.endsWith('.exe')) result.windows = url
-          else if (name.endsWith('.dmg')) result.macos = url
-          else if (name.endsWith('.appimage')) result.linux = url
-        })
+          if (!url) continue
+
+          if (name.endsWith('.exe')) {
+            resultUrls.windows = url
+            matchedAnyAsset = true
+          } else if (name.endsWith('.dmg')) {
+            // Prefer arm64 DMG when multiple macOS builds exist
+            if (resultUrls.macos === fallbackPage || name.includes('arm64')) {
+              resultUrls.macos = url
+            }
+            matchedAnyAsset = true
+          } else if (name.endsWith('.appimage')) {
+            resultUrls.linux = url
+            matchedAnyAsset = true
+          }
+        }
 
         if (!cancelled) {
-          setUrls(result)
-          setCachedRelease(result)
+          setUrls(resultUrls)
+          setVersion(tagVersion)
+          if (matchedAnyAsset) {
+            setCachedRelease({ urls: resultUrls, version: tagVersion })
+          }
         }
       } catch (err) {
         console.warn('[useLatestRelease] Failed to fetch latest release, using fallbacks:', err.message)
         if (!cancelled) {
           setUrls(FALLBACK_URLS)
-          setCachedRelease(FALLBACK_URLS)
+          setVersion(FALLBACK_VERSION)
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -87,5 +113,5 @@ export function useLatestRelease() {
     return () => { cancelled = true }
   }, [])
 
-  return { urls, loading }
+  return { urls, version, loading }
 }
