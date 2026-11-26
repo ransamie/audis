@@ -12,6 +12,7 @@ import BatchQueue from './components/BatchQueue'
 import Waveform from './components/Waveform'
 import Controls from './components/Controls'
 import Settings from './components/Settings'
+import MetadataEditor from './components/MetadataEditor'
 
 function deriveFallbackTitle(fileName = '') {
   return fileName
@@ -41,6 +42,10 @@ export default function App () {
   const [cropRegion,   setCropRegion]   = useState({ start: 0, end: 0, duration: 0 })
   const [settings,     setSettings]     = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [metadataOpen, setMetadataOpen] = useState(false)
+  const [metadataFile, setMetadataFile] = useState(null)
+  const [leftCollapsed,  setLeftCollapsed]  = useState(false)
+  const [rightCollapsed, setRightCollapsed] = useState(false)
 
   const queueRef = useRef(queue)
   useEffect(() => { queueRef.current = queue }, [queue])
@@ -448,17 +453,51 @@ export default function App () {
           </section>
         ) : (
           <>
-            <aside className="w-80 flex-shrink-0 overflow-hidden">
-              <BatchQueue
-                queue={queue}
-                activeId={activeId}
-                onFocus={handleItemFocus}
-                onToggleIntro={handleToggleIntro}
-                onToggleOutro={handleToggleOutro}
-                onApprove={handleApproveAndNext}
-                onAutoApprove={handleAutoApproveClean}
-                settings={settings}
-              />
+            {/* Left: Files Bin (collapsible) */}
+            <aside
+              className={[
+                'flex-shrink-0 overflow-hidden relative transition-all duration-200 ease-out',
+                leftCollapsed ? 'w-4' : 'w-80',
+                !leftCollapsed ? 'border-r border-[#2b2f37]' : '',
+              ].join(' ')}
+            >
+              {!leftCollapsed && (
+                <BatchQueue
+                  queue={queue}
+                  activeId={activeId}
+                  onFocus={handleItemFocus}
+                  onToggleIntro={handleToggleIntro}
+                  onToggleOutro={handleToggleOutro}
+                  onApprove={handleApproveAndNext}
+                  onAutoApprove={handleAutoApproveClean}
+                  settings={settings}
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => setLeftCollapsed(!leftCollapsed)}
+                aria-label={leftCollapsed ? 'Expand Files Bin' : 'Collapse Files Bin'}
+                className={[
+                  'absolute right-0 top-1/2 -translate-y-1/2 flex h-6 w-4 items-center justify-center rounded-r-md transition-colors',
+                  leftCollapsed
+                    ? 'bg-brand-600 hover:bg-brand-500 text-white border-l border-brand-400/30'
+                    : 'bg-[#1a1d22] hover:bg-[#232832] text-slate-300 border-l border-[#2b2f37]',
+                ].join(' ')}
+              >
+                <svg
+                  aria-hidden="true"
+                  className="w-3 h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  {leftCollapsed ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7" />
+                  )}
+                </svg>
+              </button>
             </aside>
 
             <section className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -490,30 +529,72 @@ export default function App () {
               )}
             </section>
 
-            <aside className="w-72 flex-shrink-0 flex flex-col p-3.5 border-l border-[#2b2f37] bg-[#181a1f] overflow-hidden">
-              <Controls
-                activeItem={activeItem}
-                queueTotal={queueTotal}
-                queueDone={queueDone}
-                queueExporting={queueExporting}
-                batchOutputDir={batchSummary?.outputDir || settings?.outputDir}
-                onApproveAndNext={() => handleApproveAndNext(activeItem?.id)}
-                onSkip={handleSkip}
-                onAutoApprove={handleAutoApproveClean}
-                onToggleCut={handleToggleCut}
-                onRenameTitle={handleRenameTitle}
-                onOpenOutputFolder={() =>
-                  window.electronAPI?.openOutputFolder?.(batchSummary?.outputDir || settings?.outputDir)
-                }
-                settings={settings}
-              />
+            {/* Right: Controls Inspector (collapsible) */}
+            <aside
+              className={[
+                'flex-shrink-0 flex flex-col p-3.5 overflow-hidden relative transition-all duration-200 ease-out',
+                rightCollapsed ? 'w-4' : 'w-72',
+                !rightCollapsed ? 'border-l border-[#2b2f37] bg-[#181a1f]' : '',
+              ].join(' ')}
+            >
+              {!rightCollapsed && (
+                <>
+                  <Controls
+                    activeItem={activeItem}
+                    queueTotal={queueTotal}
+                    queueDone={queueDone}
+                    queueExporting={queueExporting}
+                    batchOutputDir={batchSummary?.outputDir || settings?.outputDir}
+                    onApproveAndNext={() => handleApproveAndNext(activeItem?.id)}
+                    onSkip={handleSkip}
+                    onAutoApprove={handleAutoApproveClean}
+                    onToggleCut={handleToggleCut}
+                    onRenameTitle={handleRenameTitle}
+                    onEditMetadata={() => {
+                      if (activeItem?.filePath) {
+                        setMetadataFile(activeItem.filePath)
+                        setMetadataOpen(true)
+                      }
+                    }}
+                    onOpenOutputFolder={() =>
+                      window.electronAPI?.openOutputFolder?.(batchSummary?.outputDir || settings?.outputDir)
+                    }
+                    settings={settings}
+                  />
 
-              {activeItem?.error && (
-                <div role="alert" className="mt-2 p-2.5 rounded-md bg-red-500/10 border border-red-500/30">
-                  <p className="text-[11px] font-semibold text-red-300">Error</p>
-                  <p className="text-[11px] text-red-400 mt-0.5 break-words">{activeItem.error}</p>
-                </div>
+                  {activeItem?.error && (
+                    <div role="alert" className="mt-2 p-2.5 rounded-md bg-red-500/10 border border-red-500/30">
+                      <p className="text-[11px] font-semibold text-red-300">Error</p>
+                      <p className="text-[11px] text-red-400 mt-0.5 break-words">{activeItem.error}</p>
+                    </div>
+                  )}
+                </>
               )}
+              <button
+                type="button"
+                onClick={() => setRightCollapsed(!rightCollapsed)}
+                aria-label={rightCollapsed ? 'Expand Controls' : 'Collapse Controls'}
+                className={[
+                  'absolute left-0 top-1/2 -translate-y-1/2 flex h-6 w-4 items-center justify-center rounded-l-md transition-colors',
+                  rightCollapsed
+                    ? 'bg-brand-600 hover:bg-brand-500 text-white border-r border-brand-400/30'
+                    : 'bg-[#181a1f] hover:bg-[#232832] text-slate-300 border-r border-[#2b2f37]',
+                ].join(' ')}
+              >
+                <svg
+                  aria-hidden="true"
+                  className="w-3 h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  {rightCollapsed ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7" />
+                  )}
+                </svg>
+              </button>
             </aside>
           </>
         )}
@@ -524,6 +605,15 @@ export default function App () {
         onClose={() => setSettingsOpen(false)}
         settings={settings}
         onSave={handleSaveSettings}
+      />
+
+      <MetadataEditor
+        isOpen={metadataOpen}
+        onClose={() => setMetadataOpen(false)}
+        filePath={metadataFile}
+        onSaved={() => {
+          // Refresh analysis title if needed
+        }}
       />
     </div>
   )

@@ -30,6 +30,13 @@ import ffmpeg from 'fluent-ffmpeg'
 import ffmpegStaticPath from 'ffmpeg-static'
 import ffprobeStaticPath from 'ffprobe-static'
 import { repairAudioFile, processAudio } from './audio.js'
+import {
+  readMetadata,
+  writeMetadata,
+  embedCoverArt,
+  removeCoverArt,
+  extractCoverArt,
+} from './metadata.js'
 
 // ─── Lazy-import analyzeFile from analyzer.js (may not exist yet) ───────────
 let analyzeFile = null
@@ -558,6 +565,59 @@ ipcMain.handle('audio:process', async (event, payload) => {
         body:  err.message,
       }).show()
     }
+    throw err
+  }
+})
+
+// ─── metadata:read ──────────────────────────────────────────────────────────
+ipcMain.handle('metadata:read', async (_event, { filePath }) => {
+  try {
+    return await readMetadata(filePath)
+  } catch (err) {
+    console.error('[Audis metadata:read Error]', err)
+    throw err
+  }
+})
+
+// ─── metadata:write ─────────────────────────────────────────────────────────
+ipcMain.handle('metadata:write', async (_event, { filePath, updates }) => {
+  try {
+    await writeMetadata(filePath, updates)
+    return { ok: true }
+  } catch (err) {
+    console.error('[Audis metadata:write Error]', err)
+    throw err
+  }
+})
+
+// ─── metadata:embedCover ────────────────────────────────────────────────────
+ipcMain.handle('metadata:embedCover', async (_event, { filePath, imageSource }) => {
+  try {
+    await embedCoverArt(filePath, imageSource)
+    return { ok: true }
+  } catch (err) {
+    console.error('[Audis metadata:embedCover Error]', err)
+    throw err
+  }
+})
+
+// ─── metadata:removeCover ───────────────────────────────────────────────────
+ipcMain.handle('metadata:removeCover', async (_event, { filePath }) => {
+  try {
+    await removeCoverArt(filePath)
+    return { ok: true }
+  } catch (err) {
+    console.error('[Audis metadata:removeCover Error]', err)
+    throw err
+  }
+})
+
+// ─── metadata:extractCover ──────────────────────────────────────────────────
+ipcMain.handle('metadata:extractCover', async (_event, { filePath }) => {
+  try {
+    return await extractCoverArt(filePath)
+  } catch (err) {
+    console.error('[Audis metadata:extractCover Error]', err)
     throw err
   }
 })

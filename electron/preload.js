@@ -151,4 +151,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Securely retrieve the decrypted API key (never stored in plain text). */
   getApiKey: () =>
     ipcRenderer.invoke('settings:getApiKey'),
+
+  // ── Metadata (ID3 / cover art) ───────────────────────────────────────────
+  /** Read editable metadata fields + cover art from an audio file. */
+  readMetadata: (filePath) =>
+    ipcRenderer.invoke('metadata:read', { filePath }),
+
+  /** Write text metadata fields to an audio file. */
+  writeMetadata: (filePath, updates) =>
+    ipcRenderer.invoke('metadata:write', { filePath, updates }),
+
+  /** Embed cover art (absolute image path or data-URI) into an audio file. */
+  embedCoverArt: (filePath, imageSource) =>
+    ipcRenderer.invoke('metadata:embedCover', { filePath, imageSource }),
+
+  /** Remove all embedded cover art from an audio file. */
+  removeCoverArt: (filePath) =>
+    ipcRenderer.invoke('metadata:removeCover', { filePath }),
+
+  /** Extract cover art as a base64 data-URI (or null). */
+  extractCoverArt: (filePath) =>
+    ipcRenderer.invoke('metadata:extractCover', { filePath }),
 })
