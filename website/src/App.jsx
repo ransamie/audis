@@ -1,6 +1,7 @@
 import React from 'react'
 import AudisLogo from './components/Logo'
 import InteractiveDemo from './components/InteractiveDemo'
+import { useLatestRelease } from './hooks/useLatestRelease'
 import {
   Download,
   Sparkles,
@@ -16,6 +17,8 @@ import {
 } from 'lucide-react'
 
 export default function App() {
+  const { urls } = useLatestRelease()
+
   return (
     <div className="min-h-screen bg-surface-base text-slate-100 font-sans selection:bg-brand-500/30 selection:text-brand-300 relative overflow-x-hidden">
 
@@ -72,21 +75,21 @@ export default function App() {
 
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
           <a
-            href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-Setup-1.0.0.exe"
+            href={urls.windows}
             className="btn-primary w-full sm:w-auto"
           >
             <Monitor className="w-4 h-4" />
             <span>Windows (.exe)</span>
           </a>
           <a
-            href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-1.0.0-arm64.dmg"
+            href={urls.macos}
             className="btn-secondary w-full sm:w-auto"
           >
             <Apple className="w-4 h-4 text-accent-cyan" />
             <span>macOS (.dmg)</span>
           </a>
           <a
-            href="https://github.com/ransamie/audis/releases/download/v1.0.0/Audis-1.0.0.AppImage"
+            href={urls.linux}
             className="btn-secondary w-full sm:w-auto"
           >
             <Download className="w-4 h-4 text-accent-emerald" />
@@ -252,21 +255,21 @@ export default function App() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-2xl mx-auto">
             <a
-              href="https://github.com/ransamie/audis/releases/download/v1.1.0/Audis-Setup-1.1.0.exe"
+              href={urls.windows}
               className="btn-primary w-full sm:w-1/3"
             >
               <Monitor className="w-5 h-5" />
               <span>Windows (.exe)</span>
             </a>
             <a
-              href="https://github.com/ransamie/audis/releases/download/v1.1.0/Audis-1.1.0-arm64.dmg"
+              href={urls.macos}
               className="btn-secondary w-full sm:w-1/3"
             >
               <Apple className="w-5 h-5 text-accent-cyan" />
               <span>macOS (.dmg)</span>
             </a>
             <a
-              href="https://github.com/ransamie/audis/releases/download/v1.1.0/Audis-1.1.0.AppImage"
+              href={urls.linux}
               className="btn-secondary w-full sm:w-1/3"
             >
               <Download className="w-5 h-5 text-accent-emerald" />
