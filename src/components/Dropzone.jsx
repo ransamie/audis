@@ -7,7 +7,7 @@
 
 import React, { useState, useCallback, useRef } from 'react'
 
-const ACCEPTED_TYPES = ['.mp3', '.wav', '.aac', '.flac', '.m4a']
+const ACCEPTED_TYPES = ['.mp3', '.wav', '.aac', '.flac', '.m4a', '.ogg']
 const ACCEPTED_MIME  = [
   'audio/mpeg',
   'audio/wav',
@@ -16,6 +16,7 @@ const ACCEPTED_MIME  = [
   'audio/flac',
   'audio/mp4',
   'audio/x-m4a',
+  'audio/ogg',
 ]
 
 function isSupportedFile(file) {
@@ -69,7 +70,7 @@ export default function Dropzone ({ onFilesAccepted, onFileAccepted }) {
     }
 
     if (skipped.length > 0 && valid.length === 0) {
-      setErrorMsg(`Unsupported format (${skipped[0]}). Use MP3, WAV, AAC, FLAC, or M4A.`)
+      setErrorMsg(`Unsupported format (${skipped[0]}). Use MP3, WAV, AAC, FLAC, M4A, or OGG.`)
       return
     }
     if (skipped.length > 0) {
@@ -98,7 +99,7 @@ export default function Dropzone ({ onFilesAccepted, onFileAccepted }) {
       try {
         const paths = await window.electronAPI.openFilesDialog({
           title: 'Select Audio Files',
-          filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a'] }],
+          filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg'] }],
         })
         if (Array.isArray(paths) && paths.length > 0) emitAccepted(paths.map(fileFromPath))
       } catch (err) {
@@ -108,7 +109,7 @@ export default function Dropzone ({ onFilesAccepted, onFileAccepted }) {
       try {
         const filePath = await window.electronAPI.openFileDialog({
           title: 'Select Audio File',
-          filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a'] }],
+          filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg'] }],
         })
         if (filePath) emitAccepted([fileFromPath(filePath)])
       } catch (err) {
@@ -168,7 +169,7 @@ export default function Dropzone ({ onFilesAccepted, onFileAccepted }) {
           {isDragging ? 'Drop files to load into batch workspace' : 'Import Audio Session'}
         </p>
         <p className="text-xs text-slate-400">
-          Drag and drop individual tracks or an entire batch folder (MP3, WAV, AAC, FLAC, M4A).
+          Drag and drop individual tracks or an entire batch folder (MP3, WAV, AAC, FLAC, M4A, OGG).
         </p>
       </div>
 

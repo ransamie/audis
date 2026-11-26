@@ -196,7 +196,7 @@ export default function App () {
   const handleAddFilesDialog = useCallback(async () => {
     const paths = await window.electronAPI?.openFilesDialog?.({
       title: 'Add Audio Files',
-      filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a'] }],
+      filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg'] }],
     })
     if (Array.isArray(paths) && paths.length) {
       handleFilesAccepted(paths.map(fileFromPath))

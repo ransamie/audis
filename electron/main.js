@@ -405,7 +405,7 @@ ipcMain.handle('dialog:openFile', async (_event, options = {}) => {
     if (!props.includes('openDirectory')) {
       dialogOptions.filters = Array.isArray(options.filters) && options.filters.length
         ? options.filters
-        : [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a'] }]
+        : [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg'] }]
     }
     const result = (win && !win.isDestroyed())
       ? await dialog.showOpenDialog(win, dialogOptions)
@@ -428,7 +428,7 @@ ipcMain.handle('dialog:openFiles', async (_event, options = {}) => {
       properties: ['openFile', 'multiSelections'],
       filters: Array.isArray(options.filters) && options.filters.length
         ? options.filters
-        : [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a'] }],
+        : [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg'] }],
     }
     const result = (win && !win.isDestroyed())
       ? await dialog.showOpenDialog(win, dialogOptions)

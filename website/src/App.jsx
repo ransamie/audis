@@ -291,7 +291,7 @@ export default function App() {
           <div className="studio-panel rounded-xl p-6">
             <h3 className="text-base font-bold text-white mb-3">What audio formats does Audis support?</h3>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Audis supports MP3, WAV, AAC, FLAC, and M4A. Non-standard or corrupt bitstreams (e.g., raw
+              Audis supports MP3, WAV, AAC, FLAC, M4A, and OGG. Non-standard or corrupt bitstreams (e.g., raw
               AAC/M4A disguised as MP3) are automatically repaired on the fly into standard PCM WAV/MP3.
             </p>
           </div>

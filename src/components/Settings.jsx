@@ -121,7 +121,7 @@ export default function Settings ({ isOpen, onClose, settings, onSave }) {
     try {
       const result = await window.electronAPI.openFileDialog({
         title: `Select ${field === 'introPath' ? 'Intro' : 'Outro'} Track`,
-        filters: [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a'] }],
+        filters: [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg'] }],
         properties: ['openFile'],
       })
       if (result) setForm((f) => ({ ...f, [field]: result }))
