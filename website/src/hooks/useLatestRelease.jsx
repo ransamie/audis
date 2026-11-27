@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 
-const FALLBACK_VERSION = 'v1.1.1'
+const FALLBACK_VERSION = 'v1.1.2'
 
 // Fallback URLs — used if the GitHub API is unreachable or rate-limited
 const FALLBACK_URLS = {
-  windows: 'https://github.com/ransamie/audis/releases/download/v1.1.1/Audis-Setup-1.1.1.exe',
-  macos:   'https://github.com/ransamie/audis/releases/download/v1.1.1/Audis-1.1.1-arm64.dmg',
-  linux:   'https://github.com/ransamie/audis/releases/download/v1.1.1/Audis-1.1.1.AppImage',
+  windows: 'https://github.com/ransamie/audis/releases/download/v1.1.2/Audis-Setup-1.1.2.exe',
+  macos:   'https://github.com/ransamie/audis/releases/download/v1.1.2/Audis-1.1.2-arm64.dmg',
+  linux:   'https://github.com/ransamie/audis/releases/download/v1.1.2/Audis-1.1.2.AppImage',
 }
 
 const CACHE_KEY = 'audis_latest_release_v2'

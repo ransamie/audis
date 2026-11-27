@@ -324,10 +324,16 @@ export async function transcribeAudio(filePath, { apiKey, apiProvider } = {}) {
       : 'https://api.openai.com/v1'
 
     const fileBuffer = await fs.promises.readFile(filePath)
-    const fileName   = path.basename(filePath)
-    const mimeType   = fileName.endsWith('.wav') ? 'audio/wav'
-                     : fileName.endsWith('.flac') ? 'audio/flac'
-                     : 'audio/mpeg'
+    const fileName  = path.basename(filePath)
+    const mimeByExt = {
+      '.wav':  'audio/wav',
+      '.flac': 'audio/flac',
+      '.ogg':  'audio/ogg',
+      '.m4a':  'audio/mp4',
+      '.mp4':  'audio/mp4',
+      '.aac':  'audio/aac',
+    }
+    const mimeType  = mimeByExt[path.extname(fileName).toLowerCase()] || 'audio/mpeg'
 
     // Build multipart/form-data body using native FormData (Node 18+ / Electron)
     const formData = new FormData()

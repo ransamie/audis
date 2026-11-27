@@ -132,6 +132,8 @@ function applyCodec(ff, ext) {
     ff.audioCodec('aac').audioBitrate('320k')
   } else if (ext === 'flac') {
     ff.audioCodec('flac')
+  } else if (ext === 'ogg') {
+    ff.audioCodec('libvorbis').audioQuality(6)
   } else {
     ff.audioCodec('libmp3lame').audioBitrate('320k')
   }
@@ -160,7 +162,7 @@ function applyCodec(ff, ext) {
  * @param {boolean}  [opts.useIntro]        — whether to include the intro
  * @param {boolean}  [opts.useOutro]        — whether to include the outro
  * @param {string}   opts.outputDir         — directory to write the output file
- * @param {string}   [opts.exportFormat]    — 'mp3'|'wav'|'aac'|'flac'|'m4a'|'original'
+ * @param {string}   [opts.exportFormat]    — 'mp3'|'wav'|'aac'|'flac'|'m4a'|'ogg'|'original'
  * @param {number}   [opts.fadeDuration=2]  — crossfade/fade duration in seconds
  * @param {Function} [opts.onProgress]      — progress callback: ({percent, timemark}) => void
  * @returns {Promise<{success: boolean, outputPath: string}>}
@@ -219,7 +221,7 @@ export async function processAudio({
   let ext = exportFormat === 'original'
     ? path.extname(mainPath).toLowerCase().replace('.', '') || 'mp3'
     : exportFormat
-  if (!['mp3', 'wav', 'aac', 'flac', 'm4a'].includes(ext)) ext = 'mp3'
+  if (!['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg'].includes(ext)) ext = 'mp3'
 
   // Build slug: use suggestedTitle if provided, else a timestamp fallback
   const originalSlug = slugify(path.basename(mainPath, path.extname(mainPath)))

@@ -17,6 +17,7 @@ const ACCEPTED_MIME  = [
   'audio/mp4',
   'audio/x-m4a',
   'audio/ogg',
+  'application/ogg',
 ]
 
 function isSupportedFile(file) {

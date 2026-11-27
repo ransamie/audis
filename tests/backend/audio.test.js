@@ -133,4 +133,29 @@ describe('Audio Processing Utility', () => {
     expect(result.outputPath).toMatch(/07_Sunday_Sermon/)
     if (fs.existsSync(result.outputPath)) fs.unlinkSync(result.outputPath)
   }, 30000)
+
+  // 6. OGG (Ogg Vorbis) export and input round-trip
+  it('should export OGG Vorbis and accept .ogg input with original format', async () => {
+    const oggRes = await processAudio({
+      mainPath, startTime: 0, endTime: 1,
+      useIntro: false, useOutro: false,
+      outputDir, exportFormat: 'ogg', fadeDuration: 0.1,
+      suggestedTitle: 'Ogg Export',
+    })
+    expect(oggRes.success).toBe(true)
+    expect(oggRes.outputPath.endsWith('.ogg')).toBe(true)
+    expect(fs.existsSync(oggRes.outputPath)).toBe(true)
+
+    const origRes = await processAudio({
+      mainPath: oggRes.outputPath,
+      useIntro: false, useOutro: false,
+      outputDir, exportFormat: 'original', fadeDuration: 0.05,
+      suggestedTitle: 'Ogg Roundtrip',
+    })
+    expect(origRes.success).toBe(true)
+    expect(origRes.outputPath.endsWith('.ogg')).toBe(true)
+
+    if (fs.existsSync(oggRes.outputPath)) fs.unlinkSync(oggRes.outputPath)
+    if (fs.existsSync(origRes.outputPath)) fs.unlinkSync(origRes.outputPath)
+  }, 30000)
 })

@@ -51,27 +51,54 @@ try {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
 
-// ─── Tell fluent-ffmpeg where the static binary lives ─────────────────────
+const binaryExt = process.platform === 'win32' ? '.exe' : ''
+
+function resolveExistingPath (candidates, fallback) {
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) return candidate
+  }
+  return fallback
+}
+
+const unpackedAsarPath = (p) => (typeof p === 'string' ? p.replace('app.asar', 'app.asar.unpacked') : '')
+
+// ─── Tell fluent-ffmpeg where the static binaries live ─────────────────────
 const resolvedFfmpegPath = app.isPackaged
-  ? path.join(process.resourcesPath, 'ffmpeg-static', 'ffmpeg' + (process.platform === 'win32' ? '.exe' : ''))
+  ? resolveExistingPath([
+      path.join(process.resourcesPath, 'ffmpeg-static', `ffmpeg${binaryExt}`),
+      unpackedAsarPath(ffmpegStaticPath),
+      ffmpegStaticPath,
+    ], path.join(process.resourcesPath, 'ffmpeg-static', `ffmpeg${binaryExt}`))
   : ffmpegStaticPath
 
 const resolvedFfprobePath = app.isPackaged
-  ? path.join(process.resourcesPath, 'ffprobe-static', 'ffprobe' + (process.platform === 'win32' ? '.exe' : ''))
+  ? resolveExistingPath([
+      path.join(process.resourcesPath, 'ffprobe-static', 'bin', process.platform, process.arch, `ffprobe${binaryExt}`),
+      unpackedAsarPath(ffprobeStaticPath.path),
+      ffprobeStaticPath.path,
+    ], path.join(process.resourcesPath, 'ffprobe-static', 'bin', process.platform, process.arch, `ffprobe${binaryExt}`))
   : ffprobeStaticPath.path
 
 ffmpeg.setFfmpegPath(resolvedFfmpegPath)
 ffmpeg.setFfprobePath(resolvedFfprobePath)
 
-// ─── Audio file extensions for folder scanning ────────────────────────────
-const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.aac', '.flac', '.m4a'])
+// Native FFmpeg cannot read inside app.asar; use extraResources/assets when packaged
+const assetsDir = app.isPackaged
+  ? path.join(process.resourcesPath, 'assets')
+  : path.join(app.getAppPath(), 'public', 'assets')
+const defaultIntroPath = path.join(assetsDir, 'intro.mp3')
+const defaultOutroPath = path.join(assetsDir, 'outro.mp3')
+
+// ─── Audio file extensions for folder scanning & file dialogs ──────────────
+const AUDIO_FILTER_EXTENSIONS = ['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg']
+const AUDIO_EXTENSIONS = new Set(AUDIO_FILTER_EXTENSIONS.map(ext => `.${ext}`))
 
 // ─── Persistent settings store ─────────────────────────────────────────────
 const store = new Store({
   name: 'audis-settings',
   defaults: {
-    introPath: path.join(app.getAppPath(), 'public', 'assets', 'intro.mp3'),
-    outroPath:  path.join(app.getAppPath(), 'public', 'assets', 'outro.mp3'),
+    introPath: defaultIntroPath,
+    outroPath:  defaultOutroPath,
     fadeDuration: 2,
     outputDir:   path.join(os.homedir(), 'Downloads'),
     exportFormat: 'original',
@@ -90,16 +117,27 @@ const store = new Store({
   }
 })
 
+// Auto-repair stale app.asar asset paths persisted by earlier packaged versions
+for (const [key, fallback] of [['introPath', defaultIntroPath], ['outroPath', defaultOutroPath]]) {
+  const saved = store.get(key)
+  if (typeof saved === 'string' && saved.includes('app.asar')) {
+    store.set(key, fallback)
+  }
+}
+
 // ─── Window factory & single-instance lock ─────────────────────────────────
 let mainWindow
 
 function createWindow () {
+  const windowIconPath = path.join(assetsDir, 'icon.png')
   mainWindow = new BrowserWindow({
     width:          1280,
     height:         820,
     minWidth:       960,
     minHeight:      620,
     show:           false,
+    title:          'Audis — Audio Processor',
+    icon:           fs.existsSync(windowIconPath) ? windowIconPath : undefined,
     autoHideMenuBar: true,
     backgroundColor: '#141619',
     titleBarStyle:  process.platform === 'darwin' ? 'hiddenInset' : 'default',
@@ -134,6 +172,11 @@ function createWindow () {
 }
 
 // ─── App lifecycle ─────────────────────────────────────────────────────────
+app.setName('Audis')
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.audis.app')
+}
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 
 if (!gotSingleInstanceLock) {
@@ -405,7 +448,7 @@ ipcMain.handle('dialog:openFile', async (_event, options = {}) => {
     if (!props.includes('openDirectory')) {
       dialogOptions.filters = Array.isArray(options.filters) && options.filters.length
         ? options.filters
-        : [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg'] }]
+        : [{ name: 'Audio Files', extensions: AUDIO_FILTER_EXTENSIONS }]
     }
     const result = (win && !win.isDestroyed())
       ? await dialog.showOpenDialog(win, dialogOptions)
@@ -428,7 +471,7 @@ ipcMain.handle('dialog:openFiles', async (_event, options = {}) => {
       properties: ['openFile', 'multiSelections'],
       filters: Array.isArray(options.filters) && options.filters.length
         ? options.filters
-        : [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'm4a', 'ogg'] }],
+        : [{ name: 'Audio Files', extensions: AUDIO_FILTER_EXTENSIONS }],
     }
     const result = (win && !win.isDestroyed())
       ? await dialog.showOpenDialog(win, dialogOptions)

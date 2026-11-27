@@ -333,6 +333,7 @@ export default function Settings ({ isOpen, onClose, settings, onSave }) {
                 <option value="wav">WAV — Lossless PCM</option>
                 <option value="aac">AAC — 320 kbps</option>
                 <option value="flac">FLAC — Lossless</option>
+                <option value="ogg">OGG — Vorbis High Quality</option>
               </select>
             </div>
 
@@ -478,7 +479,7 @@ export default function Settings ({ isOpen, onClose, settings, onSave }) {
                     </button>
                   </div>
                   <p id={ids.apiKeyHint} className="text-[11px] text-slate-500 mt-1">
-                    Encrypted on disk using Electron safeStorage.
+                    Encrypted locally using OS credential storage.
                   </p>
                 </div>
               </div>

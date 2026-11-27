@@ -135,7 +135,7 @@ export default function App() {
             </div>
             <h3 className="text-base font-bold text-white mb-2">Batch Queue</h3>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Drop multiple MP3, WAV, AAC, FLAC, or M4A files into the Files Bin. Each track gets
+              Drop multiple MP3, WAV, AAC, FLAC, M4A, or OGG files into the Files Bin. Each track gets
               its own analysis, cut review, and export status — process them one by one or all at once.
             </p>
           </div>
@@ -169,7 +169,7 @@ export default function App() {
             <h3 className="text-base font-bold text-white mb-2">Crossfade & Loudness</h3>
             <p className="text-sm text-slate-400 leading-relaxed">
               Configurable crossfades between intro, main, and outro. Optional -16 LUFS loudness
-              normalization and export to 320 kbps MP3/AAC or lossless WAV/FLAC.
+              normalization and export to 320 kbps MP3/AAC, OGG Vorbis, or lossless WAV/FLAC.
             </p>
           </div>
 
